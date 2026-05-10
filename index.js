@@ -48,22 +48,22 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/grocery')
 .catch((err) => console.error('MongoDB connection error:', err));
 
 // Initialize Kafka
-const { initKafka, consumeEvents } = require('./config/kafka');
-const { startEventConsumer } = require('./services/eventConsumer');
+// const { initKafka, consumeEvents } = require('./config/kafka');
+// const { startEventConsumer } = require('./services/eventConsumer');
 
-initKafka().then(() => {
-  console.log('Kafka initialized successfully');
+// initKafka().then(() => {
+//   console.log('Kafka initialized successfully');
 
-  // Start event consumer
-  startEventConsumer().then(() => {
-    console.log('Event consumer started successfully');
-  }).catch((err) => {
-    console.error('Event consumer failed to start:', err);
-  });
-}).catch((err) => {
-  console.error('Kafka initialization failed:', err);
-  // Don't exit process, continue with server startup
-});
+//   // Start event consumer
+//   startEventConsumer().then(() => {
+//     console.log('Event consumer started successfully');
+//   }).catch((err) => {
+//     console.error('Event consumer failed to start:', err);
+//   });
+// }).catch((err) => {
+//   console.error('Kafka initialization failed:', err);
+//   // Don't exit process, continue with server startup
+// });
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
@@ -127,6 +127,6 @@ app.get('/', (req, res) => {
   res.send('Grocery Delivery API is running');
 });
 
-server.listen(PORT, () => {
+server.listen(PORT,  '0.0.0.0',() => {
   console.log(`Server running on port ${PORT}`);
 }); 
