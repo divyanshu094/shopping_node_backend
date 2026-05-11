@@ -15,6 +15,7 @@ exports.getHome = async (req, res) => {
     ]);
 
     res.json({
+      success: true,
       banners,
       offers,
       categories,
@@ -23,43 +24,43 @@ exports.getHome = async (req, res) => {
       recommendedProducts
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.getBanners = async (req, res) => {
   try {
     const banners = await Banner.find({ isActive: true }).sort('sortOrder');
-    res.json(banners);
+    res.json({ success: true, banners });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.getOffers = async (req, res) => {
   try {
     const offers = await Offer.find({ isActive: true, endDate: { $gte: new Date() } });
-    res.json(offers);
+    res.json({ success: true, offers });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.getCategories = async (req, res) => {
   try {
     const categories = await Category.find({ isActive: true }).sort('sortOrder');
-    res.json(categories);
+    res.json({ success: true, categories });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.getFeaturedProducts = async (req, res) => {
   try {
     const products = await Product.find({ isFeatured: true, isActive: true }).populate('category');
-    res.json(products);
+    res.json({ success: true, products });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -68,9 +69,9 @@ exports.getTrendingProducts = async (req, res) => {
     const products = await Product.find({ isActive: true })
       .sort({ soldCount: -1 })
       .populate('category');
-    res.json(products);
+    res.json({ success: true, products });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -79,8 +80,8 @@ exports.getRecommendedProducts = async (req, res) => {
     const products = await Product.find({ isActive: true })
       .sort({ rating: -1 })
       .populate('category');
-    res.json(products);
+    res.json({ success: true, products });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };

@@ -38,9 +38,9 @@ exports.getCart = async (req, res) => {
     }
 
     await cart.save();
-    res.json(cart);
+    res.json({ success: true, cart });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -50,11 +50,11 @@ exports.addToCart = async (req, res) => {
 
     const product = await Product.findById(productId);
     if (!product || !product.isActive) {
-      return res.status(404).json({ message: 'Product not found' });
+      return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
     if (product.stock < quantity) {
-      return res.status(400).json({ message: 'Insufficient stock' });
+      return res.status(400).json({ success: false, message: 'Insufficient stock' });
     }
 
     let cart = await Cart.findOne({ user: req.user.userId });
@@ -80,9 +80,9 @@ exports.addToCart = async (req, res) => {
 
     await cart.save();
     await cart.populate('items.product');
-    res.json(cart);
+    res.json({ success: true, cart });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -91,22 +91,22 @@ exports.updateCartItem = async (req, res) => {
     const { itemId, quantity } = req.body;
 
     const cart = await Cart.findOne({ user: req.user.userId });
-    if (!cart) return res.status(404).json({ message: 'Cart not found' });
+    if (!cart) return res.status(404).json({ success: false, message: 'Cart not found' });
 
     const item = cart.items.id(itemId);
-    if (!item) return res.status(404).json({ message: 'Item not found in cart' });
+    if (!item) return res.status(404).json({ success: false, message: 'Item not found in cart' });
 
     const product = await Product.findById(item.product);
     if (!product || product.stock < quantity) {
-      return res.status(400).json({ message: 'Insufficient stock' });
+      return res.status(400).json({ success: false, message: 'Insufficient stock' });
     }
 
     item.quantity = quantity;
     await cart.save();
     await cart.populate('items.product');
-    res.json(cart);
+    res.json({ success: true, cart });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -115,29 +115,29 @@ exports.removeFromCart = async (req, res) => {
     const { itemId } = req.params;
 
     const cart = await Cart.findOne({ user: req.user.userId });
-    if (!cart) return res.status(404).json({ message: 'Cart not found' });
+    if (!cart) return res.status(404).json({ success: false, message: 'Cart not found' });
 
     cart.items.pull(itemId);
     await cart.save();
     await cart.populate('items.product');
-    res.json(cart);
+    res.json({ success: true, cart });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.clearCart = async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.user.userId });
-    if (!cart) return res.status(404).json({ message: 'Cart not found' });
+    if (!cart) return res.status(404).json({ success: false, message: 'Cart not found' });
 
     cart.items = [];
     cart.coupon = null;
     cart.discount = 0;
     await cart.save();
-    res.json(cart);
+    res.json({ success: true, cart });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -146,16 +146,16 @@ exports.applyCoupon = async (req, res) => {
     const { code } = req.body;
 
     const coupon = await Offer.findOne({ code, isActive: true, endDate: { $gt: new Date() } });
-    if (!coupon) return res.status(404).json({ message: 'Invalid or expired coupon' });
+    if (!coupon) return res.status(404).json({ success: false, message: 'Invalid or expired coupon' });
 
     const cart = await Cart.findOne({ user: req.user.userId });
-    if (!cart) return res.status(404).json({ message: 'Cart not found' });
+    if (!cart) return res.status(404).json({ success: false, message: 'Cart not found' });
 
     cart.coupon = coupon._id;
     await cart.save();
     await cart.populate('coupon');
 
-    res.json({ message: 'Coupon applied successfully', cart });
+    res.json({ success: true, message: 'Coupon applied successfully', cart });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -164,14 +164,14 @@ exports.applyCoupon = async (req, res) => {
 exports.removeCoupon = async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.user.userId });
-    if (!cart) return res.status(404).json({ message: 'Cart not found' });
+    if (!cart) return res.status(404).json({ success: false, message: 'Cart not found' });
 
     cart.coupon = null;
     cart.discount = 0;
     await cart.save();
 
-    res.json({ message: 'Coupon removed successfully', cart });
+    res.json({ success: true, message: 'Coupon removed successfully', cart });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 }; 

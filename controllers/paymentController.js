@@ -31,11 +31,12 @@ exports.createOrder = async (req, res) => {
     // });
 
     res.json({
+      success: true,
       clientSecret: paymentIntent.client_secret,
       paymentIntentId: paymentIntent.id
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -87,7 +88,7 @@ exports.verifyPayment = async (req, res) => {
       res.status(400).json({ success: false, message: 'Payment not completed' });
     }
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -118,6 +119,7 @@ exports.createRazorpayOrder = async (req, res) => {
     // });
 
     res.json({
+      success: true,
       orderId: razorpayOrder.id,
       amount: razorpayOrder.amount,
       currency: razorpayOrder.currency,
@@ -130,7 +132,7 @@ exports.createRazorpayOrder = async (req, res) => {
         }
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -186,7 +188,7 @@ exports.verifyRazorpayPayment = async (req, res) => {
 
     res.json({ success: true, message: 'Payment verified successfully' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -194,6 +196,7 @@ exports.getPaymentMethods = async (req, res) => {
   try {
     // Return available payment methods
     res.json({
+      success: true,
       methods: [
         { id: 'card', name: 'Credit/Debit Card', provider: 'stripe' },
         { id: 'upi', name: 'UPI', provider: 'razorpay' },
@@ -204,7 +207,7 @@ exports.getPaymentMethods = async (req, res) => {
       ]
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -244,7 +247,7 @@ exports.handleStripeWebhook = async (req, res) => {
 
     res.json({ received: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -320,6 +323,6 @@ exports.handleRazorpayWebhook = async (req, res) => {
     res.json({ received: true });
   } catch (err) {
     console.error('Razorpay webhook error:', err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };

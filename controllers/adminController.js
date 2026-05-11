@@ -10,10 +10,10 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email, isAdmin: true });
-    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+    if (!user) return res.status(400).json({ success: false, message: 'Invalid credentials' });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+    if (!isMatch) return res.status(400).json({ success: false, message: 'Invalid credentials' });
 
     const token = jwt.sign(
       { userId: user._id, isAdmin: true },
@@ -21,9 +21,9 @@ exports.login = async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email, isAdmin: true } });
+    res.json({ success: true, token, user: { id: user._id, name: user.name, email: user.email, isAdmin: true } });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -55,6 +55,7 @@ exports.getOrders = async (req, res) => {
     ]);
 
     res.json({
+      success: true,
       orders,
       totalPages: Math.ceil(total / limit),
       currentPage: page,
@@ -62,7 +63,7 @@ exports.getOrders = async (req, res) => {
       totalRevenue: totalRevenue[0]?.total || 0
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -88,13 +89,14 @@ exports.getUsers = async (req, res) => {
     const total = await User.countDocuments(query);
 
     res.json({
+      success: true,
       users,
       totalPages: Math.ceil(total / limit),
       currentPage: page,
       total
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -116,13 +118,14 @@ exports.getProducts = async (req, res) => {
     const total = await Product.countDocuments(query);
 
     res.json({
+      success: true,
       products,
       totalPages: Math.ceil(total / limit),
       currentPage: page,
       total
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -131,30 +134,30 @@ exports.createProduct = async (req, res) => {
     const product = new Product(req.body);
     await product.save();
     await product.populate('category');
-    res.status(201).json(product);
+    res.status(201).json({ success: true, product });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.updateProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(req.params.productId, req.body, { new: true });
-    if (!product) return res.status(404).json({ message: 'Product not found' });
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
     await product.populate('category');
-    res.json(product);
+    res.json({ success: true, product });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(req.params.productId, { isActive: false });
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    res.json({ message: 'Product deleted successfully' });
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    res.json({ success: true, message: 'Product deleted successfully' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -162,19 +165,19 @@ exports.createCategory = async (req, res) => {
   try {
     const category = new (require('../models/Category'))(req.body);
     await category.save();
-    res.status(201).json(category);
+    res.status(201).json({ success: true, category });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.updateCategory = async (req, res) => {
   try {
     const category = await require('../models/Category').findByIdAndUpdate(req.params.categoryId, req.body, { new: true });
-    if (!category) return res.status(404).json({ message: 'Category not found' });
-    res.json(category);
+    if (!category) return res.status(404).json({ success: false, message: 'Category not found' });
+    res.json({ success: true, category });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -209,6 +212,7 @@ exports.getAnalytics = async (req, res) => {
     ]);
 
     res.json({
+      success: true,
       period,
       totalOrders,
       totalRevenue: totalRevenue[0]?.total || 0,
@@ -233,7 +237,7 @@ exports.getAnalytics = async (req, res) => {
       requestedBy: req.user.userId
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -243,8 +247,8 @@ exports.getDeliveryAgents = async (req, res) => {
       .populate('user', 'name email phone')
       .sort({ createdAt: -1 });
 
-    res.json(deliveryAgents);
+    res.json({ success: true, deliveryAgents });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };

@@ -9,10 +9,10 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email, isDeliveryPartner: true });
-    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+    if (!user) return res.status(400).json({ success: false, message: 'Invalid credentials' });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+    if (!isMatch) return res.status(400).json({ success: false, message: 'Invalid credentials' });
 
     const token = jwt.sign(
       { userId: user._id, isDeliveryPartner: true },
@@ -20,9 +20,9 @@ exports.login = async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    res.json({ success: true, token, user: { id: user._id, name: user.name, email: user.email } });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -32,7 +32,7 @@ exports.getOrders = async (req, res) => {
 
     // Find delivery agent
     const deliveryAgent = await DeliveryAgent.findOne({ user: req.user.userId });
-    if (!deliveryAgent) return res.status(404).json({ message: 'Delivery agent not found' });
+    if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
 
     let query = { deliveryAgent: deliveryAgent._id };
 
@@ -50,26 +50,26 @@ exports.getOrders = async (req, res) => {
       .populate(['user', 'items.product'])
       .sort({ createdAt: -1 });
 
-    res.json(orders);
+    res.json({ success: true, orders });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.acceptOrder = async (req, res) => {
   try {
     const deliveryAgent = await DeliveryAgent.findOne({ user: req.user.userId });
-    if (!deliveryAgent) return res.status(404).json({ message: 'Delivery agent not found' });
+    if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
 
     if (!deliveryAgent.isAvailable) {
-      return res.status(400).json({ message: 'You are not available for deliveries' });
+      return res.status(400).json({ success: false, message: 'You are not available for deliveries' });
     }
 
     const order = await Order.findById(req.params.orderId);
-    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
     if (order.status !== 'processing' || order.deliveryAgent) {
-      return res.status(400).json({ message: 'Order not available for assignment' });
+      return res.status(400).json({ success: false, message: 'Order not available for assignment' });
     }
 
     order.deliveryAgent = deliveryAgent._id;
@@ -89,16 +89,16 @@ exports.acceptOrder = async (req, res) => {
       location: deliveryAgent.location
     });
 
-    res.json({ message: 'Order accepted successfully', order });
+    res.json({ success: true, message: 'Order accepted successfully', order });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.markPicked = async (req, res) => {
   try {
     const deliveryAgent = await DeliveryAgent.findOne({ user: req.user.userId });
-    if (!deliveryAgent) return res.status(404).json({ message: 'Delivery agent not found' });
+    if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
 
     const order = await Order.findOne({
       _id: req.params.orderId,
@@ -106,7 +106,7 @@ exports.markPicked = async (req, res) => {
       status: 'shipped'
     });
 
-    if (!order) return res.status(404).json({ message: 'Order not found or not assigned to you' });
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found or not assigned to you' });
 
     order.tracking.status = 'Picked up';
     await order.save();
@@ -120,16 +120,16 @@ exports.markPicked = async (req, res) => {
       location: deliveryAgent.location
     });
 
-    res.json({ message: 'Order marked as picked up', order });
+    res.json({ success: true, message: 'Order marked as picked up', order });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.markDelivered = async (req, res) => {
   try {
     const deliveryAgent = await DeliveryAgent.findOne({ user: req.user.userId });
-    if (!deliveryAgent) return res.status(404).json({ message: 'Delivery agent not found' });
+    if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
 
     const order = await Order.findOne({
       _id: req.params.orderId,
@@ -137,7 +137,7 @@ exports.markDelivered = async (req, res) => {
       status: 'shipped'
     });
 
-    if (!order) return res.status(404).json({ message: 'Order not found or not assigned to you' });
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found or not assigned to you' });
 
     order.status = 'delivered';
     order.tracking.status = 'Delivered';
@@ -169,16 +169,16 @@ exports.markDelivered = async (req, res) => {
       totalEarnings: deliveryAgent.earnings
     });
 
-    res.json({ message: 'Order marked as delivered', order });
+    res.json({ success: true, message: 'Order marked as delivered', order });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.getEarnings = async (req, res) => {
   try {
     const deliveryAgent = await DeliveryAgent.findOne({ user: req.user.userId });
-    if (!deliveryAgent) return res.status(404).json({ message: 'Delivery agent not found' });
+    if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
 
     // Get earnings for current month
     const startOfMonth = new Date();
@@ -194,6 +194,7 @@ exports.getEarnings = async (req, res) => {
     const monthlyEarnings = monthlyDeliveries * 50; // Assuming ₹50 per delivery
 
     res.json({
+      success: true,
       totalEarnings: deliveryAgent.earnings,
       monthlyEarnings,
       totalDeliveries: deliveryAgent.totalDeliveries,
@@ -201,7 +202,7 @@ exports.getEarnings = async (req, res) => {
       rating: deliveryAgent.rating
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -218,10 +219,10 @@ exports.updateLocation = async (req, res) => {
       { new: true }
     );
 
-    if (!deliveryAgent) return res.status(404).json({ message: 'Delivery agent not found' });
+    if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
 
-    res.json({ message: 'Location updated successfully' });
+    res.json({ success: true, message: 'Location updated successfully' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };

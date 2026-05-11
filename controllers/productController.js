@@ -5,9 +5,9 @@ exports.createProduct = async (req, res) => {
   try {
     const product = new Product(req.body);
     await product.save();
-    res.status(201).json(product);
+    res.status(201).json({ success: true, product });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -37,23 +37,24 @@ exports.getProducts = async (req, res) => {
     const total = await Product.countDocuments(query);
 
     res.json({
+      success: true,
       products,
       totalPages: Math.ceil(total / limit),
       currentPage: page,
       total
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.getProductById = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id).populate('category');
-    if (!product || !product.isActive) return res.status(404).json({ message: 'Product not found' });
-    res.json(product);
+    if (!product || !product.isActive) return res.status(404).json({ success: false, message: 'Product not found' });
+    res.json({ success: true, product });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -69,9 +70,9 @@ exports.searchProducts = async (req, res) => {
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
-    res.json(products);
+    res.json({ success: true, products });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -95,16 +96,16 @@ exports.filterProducts = async (req, res) => {
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
-    res.json(products);
+    res.json({ success: true, products });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.getSimilarProducts = async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
-    if (!product) return res.status(404).json({ message: 'Product not found' });
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
 
     const similarProducts = await Product.find({
       category: product.category,
@@ -112,9 +113,9 @@ exports.getSimilarProducts = async (req, res) => {
       isActive: true
     }).limit(10);
 
-    res.json(similarProducts);
+    res.json({ success: true, products: similarProducts });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -128,9 +129,9 @@ exports.getProductReviews = async (req, res) => {
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
-    res.json(reviews);
+    res.json({ success: true, reviews });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -144,7 +145,7 @@ exports.addProductReview = async (req, res) => {
     });
 
     if (existingReview) {
-      return res.status(400).json({ message: 'You have already reviewed this product' });
+      return res.status(400).json({ success: false, message: 'You have already reviewed this product' });
     }
 
     const review = new Review({
@@ -167,28 +168,28 @@ exports.addProductReview = async (req, res) => {
       reviewCount: allReviews.length
     });
 
-    res.status(201).json(review);
+    res.status(201).json({ success: true, review });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.updateProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    res.json(product);
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    res.json({ success: true, product });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findByIdAndUpdate(req.params.id, { isActive: false });
-    if (!product) return res.status(404).json({ message: 'Product not found' });
-    res.json({ message: 'Product deleted' });
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    res.json({ success: true, message: 'Product deleted' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 }; 

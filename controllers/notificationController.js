@@ -16,13 +16,14 @@ exports.getNotifications = async (req, res) => {
     const total = await Notification.countDocuments(query);
 
     res.json({
+      success: true,
       notifications,
       totalPages: Math.ceil(total / limit),
       currentPage: page,
       total
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -34,11 +35,11 @@ exports.markAsRead = async (req, res) => {
       { new: true }
     );
 
-    if (!notification) return res.status(404).json({ message: 'Notification not found' });
+    if (!notification) return res.status(404).json({ success: false, message: 'Notification not found' });
 
-    res.json(notification);
+    res.json({ success: true, notification });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -52,9 +53,9 @@ exports.sendPushToken = async (req, res) => {
       { new: true }
     );
 
-    res.json({ message: 'Push token updated successfully' });
+    res.json({ success: true, message: 'Push token updated successfully' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 

@@ -8,12 +8,13 @@ exports.checkServiceability = async (req, res) => {
     const isServiceable = true; // Replace with actual logic
 
     res.json({
+      success: true,
       serviceable: isServiceable,
       estimatedDelivery: '2-3 hours',
       deliveryFee: 40
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -21,13 +22,14 @@ exports.getCurrentLocation = async (req, res) => {
   try {
     // In a real app, you'd use IP geolocation or GPS
     res.json({
+      success: true,
       latitude: 28.6139,
       longitude: 77.2090,
       city: 'New Delhi',
       country: 'India'
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -47,8 +49,8 @@ exports.getNearbyStores = async (req, res) => {
       }
     ];
 
-    res.json(stores);
+    res.json({ success: true, stores });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 };
