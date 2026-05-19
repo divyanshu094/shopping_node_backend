@@ -15,7 +15,8 @@ exports.getProducts = async (req, res) => {
   try {
     const { page = 1, limit = 20, category, search, minPrice, maxPrice, sort = 'name', order = 'asc' } = req.query;
 
-    let query = { isActive: true };
+    // let query = { isActive: true };
+    let query = { };
 
     if (category) query.category = category;
     if (search) query.$text = { $search: search };
@@ -29,7 +30,6 @@ exports.getProducts = async (req, res) => {
     sortOptions[sort] = order === 'desc' ? -1 : 1;
 
     const products = await Product.find(query)
-      .populate('category')
       .sort(sortOptions)
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -50,7 +50,7 @@ exports.getProducts = async (req, res) => {
 
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate('category');
+    const product = await Product.findById(req.params.id);
     if (!product || !product.isActive) return res.status(404).json({ success: false, message: 'Product not found' });
     res.json({ success: true, product });
   } catch (err) {
@@ -66,7 +66,6 @@ exports.searchProducts = async (req, res) => {
       $text: { $search: q },
       isActive: true
     })
-      .populate('category')
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
@@ -92,7 +91,6 @@ exports.filterProducts = async (req, res) => {
     }
 
     const products = await Product.find(query)
-      .populate('category')
       .limit(limit * 1)
       .skip((page - 1) * limit);
 

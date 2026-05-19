@@ -65,6 +65,19 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/grocery')
 //   // Don't exit process, continue with server startup
 // });
 
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+
+  next();
+});
+
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 const authRoutes = require('./routes/auth');

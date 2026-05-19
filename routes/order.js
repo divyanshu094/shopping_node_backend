@@ -19,40 +19,61 @@ const admin = require('../middleware/admin');
  *           schema:
  *             type: object
  *             required:
- *               - shippingAddress
+ *               - addressId
  *               - paymentMethod
+ *               - items
  *             properties:
- *               shippingAddress:
- *                 type: object
- *                 properties:
- *                   type:
- *                     type: string
- *                     enum: [home, work, other]
- *                   street:
- *                     type: string
- *                   city:
- *                     type: string
- *                   state:
- *                     type: string
- *                   zipCode:
- *                     type: string
- *                   country:
- *                     type: string
- *                   coordinates:
- *                     type: object
- *                     properties:
- *                       latitude:
- *                         type: number
- *                       longitude:
- *                         type: number
+ *               addressId:
+ *                 type: string
+ *                 description: Saved address ID
+ *                 example: 685af56c8f234ab123456789
+ *
  *               paymentMethod:
  *                 type: string
  *                 enum: [card, upi, cod, wallet]
+ *                 example: cod
+ *
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - product
+ *                     - quantity
+ *                   properties:
+ *                     product:
+ *                       type: string
+ *                       description: Product ID
+ *                       example: 685bc12ab123456789abcd11
+ *
+ *                     quantity:
+ *                       type: integer
+ *                       example: 2
+ *
+ *                     attributes:
+ *                       type: object
+ *                       additionalProperties:
+ *                         type: string
+ *                       example:
+ *                         size: XL
+ *                         color: Black
+ *
+ *               coupon:
+ *                 type: string
+ *                 description: Offer/Coupon ID
+ *                 example: 685bc12ab123456789offer11
+ *
+ *               notes:
+ *                 type: string
+ *                 example: Please deliver fast
+ *
  *     responses:
  *       201:
  *         description: Order created successfully
+ *
  *       400:
  *         description: Bad request
+ *
  *       401:
  *         description: Unauthorized
  */

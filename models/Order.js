@@ -27,16 +27,9 @@ const orderSchema = new mongoose.Schema({
     amount: { type: Number }
   },
   shippingAddress: {
-    type: { type: String, required: true },
-    street: { type: String, required: true },
-    city: { type: String, required: true },
-    state: { type: String, required: true },
-    zipCode: { type: String, required: true },
-    country: { type: String, required: true },
-    coordinates: {
-      latitude: { type: Number },
-      longitude: { type: Number }
-    }
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Address',
+    required: true
   },
   deliveryAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryAgent' },
   tracking: {

@@ -6,101 +6,160 @@ const DeliveryAgent = require('../models/DeliveryAgent');
 const { v4: uuidv4 } = require('uuid');
 const { publishEvent, TOPICS } = require('../config/kafka');
 
+// exports.createOrder = async (req, res) => {
+//   try {
+//     const cart = await Cart.findOne({ user: req.user.userId }).populate('items.product coupon');
+//     if (!cart || cart.items.length === 0) {
+//       return res.status(400).json({ success: false, message: 'Cart is empty' });
+//     }
+
+//     const { shippingAddress, paymentMethod } = req.body;
+//     if (!shippingAddress || !paymentMethod) {
+//       return res.status(400).json({ success: false, message: 'Shipping address and payment method are required' });
+//     }
+
+//     // Check stock availability
+//     for (const item of cart.items) {
+//       if (item.product.stock < item.quantity) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Insufficient stock for ${item.product.name}`
+//         });
+//       }
+//     }
+
+//     // Calculate totals
+//     let subtotal = 0;
+//     const orderItems = cart.items.map(item => {
+//       const price = item.product.price;
+//       subtotal += price * item.quantity;
+//       return {
+//         product: item.product._id,
+//         quantity: item.quantity,
+//         price,
+//         attributes: item.attributes
+//       };
+//     });
+
+//     const tax = subtotal * 0.18; // 18% GST
+//     let discount = cart.discount || 0;
+//     const total = subtotal + tax - discount;
+
+//     const order = new Order({
+//       user: req.user.userId,
+//       items: orderItems,
+//       total,
+//       subtotal,
+//       tax,
+//       discount: discount,
+//       coupon: cart.coupon,
+//       shippingAddress,
+//       payment: {
+//         method: paymentMethod,
+//         amount: total
+//       }
+//     });
+
+//     // Generate tracking number
+//     order.tracking.trackingNumber = `ORD-${uuidv4().substring(0, 8).toUpperCase()}`;
+
+//     await order.save();
+
+//     // Publish order created event
+//     await publishEvent(TOPICS.ORDER_EVENTS, {
+//       eventType: 'ORDER_CREATED',
+//       orderId: order._id,
+//       userId: req.user.userId,
+//       total: order.total,
+//       items: order.items.length,
+//       paymentMethod: paymentMethod
+//     });
+
+//     // Update product stock and publish inventory updates
+//     for (const item of cart.items) {
+//       await Product.findByIdAndUpdate(item.product._id, {
+//         $inc: { stock: -item.quantity, soldCount: item.quantity }
+//       });
+
+//       // Publish inventory update event
+//       await publishEvent(TOPICS.INVENTORY_UPDATES, {
+//         eventType: 'STOCK_DECREASED',
+//         productId: item.product._id,
+//         quantity: item.quantity,
+//         reason: 'ORDER_PLACED',
+//         orderId: order._id
+//       });
+//     }
+
+//     // Clear cart
+//     cart.items = [];
+//     cart.coupon = null;
+//     cart.discount = 0;
+//     await cart.save();
+
+//     await order.populate(['items.product', 'coupon']);
+//     res.status(201).json({ success: true, order });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
 exports.createOrder = async (req, res) => {
   try {
-    const cart = await Cart.findOne({ user: req.user.userId }).populate('items.product coupon');
-    if (!cart || cart.items.length === 0) {
-      return res.status(400).json({ success: false, message: 'Cart is empty' });
-    }
+    const {
+      addressId,
+      paymentMethod,
+      items
+    } = req.body;
 
-    const { shippingAddress, paymentMethod } = req.body;
-    if (!shippingAddress || !paymentMethod) {
-      return res.status(400).json({ success: false, message: 'Shipping address and payment method are required' });
-    }
+    let subtotal = 0;
 
-    // Check stock availability
-    for (const item of cart.items) {
-      if (item.product.stock < item.quantity) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for ${item.product.name}`
+    const orderItems = [];
+
+    for (const item of items) {
+
+      const product = await Product.findById(item.product);
+
+      if (!product) {
+        return res.status(404).json({
+          message: 'Product not found'
         });
       }
-    }
 
-    // Calculate totals
-    let subtotal = 0;
-    const orderItems = cart.items.map(item => {
-      const price = item.product.price;
-      subtotal += price * item.quantity;
-      return {
-        product: item.product._id,
+      subtotal += product.price * item.quantity;
+
+      orderItems.push({
+        product: product._id,
         quantity: item.quantity,
-        price,
-        attributes: item.attributes
-      };
-    });
-
-    const tax = subtotal * 0.18; // 18% GST
-    let discount = cart.discount || 0;
-    const total = subtotal + tax - discount;
+        price: product.price
+      });
+    }
 
     const order = new Order({
       user: req.user.userId,
+
+      shippingAddress: addressId,
+
       items: orderItems,
-      total,
+
       subtotal,
-      tax,
-      discount: discount,
-      coupon: cart.coupon,
-      shippingAddress,
+
+      total: subtotal,
+
       payment: {
-        method: paymentMethod,
-        amount: total
+        method: paymentMethod
       }
     });
 
-    // Generate tracking number
-    order.tracking.trackingNumber = `ORD-${uuidv4().substring(0, 8).toUpperCase()}`;
-
     await order.save();
 
-    // Publish order created event
-    await publishEvent(TOPICS.ORDER_EVENTS, {
-      eventType: 'ORDER_CREATED',
-      orderId: order._id,
-      userId: req.user.userId,
-      total: order.total,
-      items: order.items.length,
-      paymentMethod: paymentMethod
-    });
+    res.status(201).json(order);
 
-    // Update product stock and publish inventory updates
-    for (const item of cart.items) {
-      await Product.findByIdAndUpdate(item.product._id, {
-        $inc: { stock: -item.quantity, soldCount: item.quantity }
-      });
-
-      // Publish inventory update event
-      await publishEvent(TOPICS.INVENTORY_UPDATES, {
-        eventType: 'STOCK_DECREASED',
-        productId: item.product._id,
-        quantity: item.quantity,
-        reason: 'ORDER_PLACED',
-        orderId: order._id
-      });
-    }
-
-    // Clear cart
-    cart.items = [];
-    cart.coupon = null;
-    cart.discount = 0;
-    await cart.save();
-
-    await order.populate(['items.product', 'coupon']);
-    res.status(201).json({ success: true, order });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+
+    res.status(500).json({
+      message: err.message
+    });
   }
 };
 
