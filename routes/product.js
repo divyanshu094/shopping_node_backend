@@ -144,8 +144,6 @@ router.get('/', productController.getProducts);
  *       404:
  *         description: Product not found
  */
-router.get('/:id', productController.getProductById);
-
 /**
  * @swagger
  * /api/products/search:
@@ -216,6 +214,26 @@ router.get('/search', productController.searchProducts);
  *         description: Filtered products
  */
 router.get('/filter', productController.filterProducts);
+
+/**
+ * @swagger
+ * /api/products/{id}:
+ *   get:
+ *     summary: Get product by ID
+ *     tags: [Products]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Product details
+ *       404:
+ *         description: Product not found
+ */
+router.get('/:id', productController.getProductById);
 
 /**
  * @swagger
@@ -381,28 +399,6 @@ router.put('/admin/products/:id', auth, admin, productController.updateProduct);
  */
 router.delete('/admin/products/:id', auth, admin, productController.deleteProduct);
 
-module.exports = router;
-
-/**
- * @swagger
- * /api/products/{id}:
- *   get:
- *     summary: Get a product by ID
- *     tags: [Products]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Product details
- *       404:
- *         description: Product not found
- */
-router.get('/:id', productController.getProductById);
-
 /**
  * @swagger
  * /api/products/{id}:
@@ -465,5 +461,7 @@ router.put('/:id', auth, admin, productController.updateProduct);
  *         description: Product not found
  */
 router.delete('/:id', auth, admin, productController.deleteProduct);
+
+module.exports = router;
 
 module.exports = router; 

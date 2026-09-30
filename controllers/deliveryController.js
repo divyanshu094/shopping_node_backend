@@ -34,17 +34,12 @@ exports.getOrders = async (req, res) => {
     const deliveryAgent = await DeliveryAgent.findOne({ user: req.user.userId });
     if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
 
-    let query = { deliveryAgent: deliveryAgent._id };
-
-    if (status === 'available') {
-      // Get orders that are ready for delivery assignment
-      query = {
-        status: 'processing',
-        deliveryAgent: { $exists: false }
-      };
-    } else {
-      query.status = status;
-    }
+    const query = status === 'available'
+      ? { status: 'processing', deliveryAgent: { $exists: false } }
+      : {
+          deliveryAgent: deliveryAgent._id,
+          status: status === 'assigned' ? { $in: ['processing', 'shipped'] } : status
+        };
 
     const orders = await Order.find(query)
       .populate(['user', 'items.product'])
@@ -75,6 +70,7 @@ exports.acceptOrder = async (req, res) => {
     order.deliveryAgent = deliveryAgent._id;
     order.status = 'shipped';
     order.tracking.status = 'Out for delivery';
+    order.tracking.estimatedDelivery = new Date(Date.now() + 2 * 60 * 60 * 1000);
     await order.save();
 
     deliveryAgent.isAvailable = false;
@@ -86,7 +82,7 @@ exports.acceptOrder = async (req, res) => {
       orderId: order._id,
       deliveryAgentId: deliveryAgent._id,
       status: 'Out for delivery',
-      location: deliveryAgent.location
+      location: deliveryAgent.currentLocation
     });
 
     res.json({ success: true, message: 'Order accepted successfully', order });
@@ -206,22 +202,83 @@ exports.getEarnings = async (req, res) => {
   }
 };
 
+exports.getAgentLocation = async (req, res) => {
+  try {
+    const deliveryAgent = await DeliveryAgent.findById(req.params.agentId)
+      .select('currentLocation lastLocationUpdate');
+    if (!deliveryAgent) {
+      return res.status(404).json({ success: false, message: 'Delivery agent not found' });
+    }
+
+    const assignedOrder = await Order.exists({
+      user: req.user.userId,
+      deliveryAgent: deliveryAgent._id,
+      status: { $in: ['shipped', 'delivered'] }
+    });
+    if (!assignedOrder) {
+      return res.status(404).json({ success: false, message: 'Delivery agent not found' });
+    }
+
+    res.json({
+      success: true,
+      agentId: deliveryAgent._id,
+      location: deliveryAgent.currentLocation,
+      lastUpdated: deliveryAgent.lastLocationUpdate
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getEta = async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.orderId,
+      user: req.user.userId
+    }).select('status tracking.estimatedDelivery tracking.status');
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    res.json({
+      success: true,
+      orderId: order._id,
+      status: order.status,
+      trackingStatus: order.tracking.status,
+      estimatedDelivery: order.tracking.estimatedDelivery || null
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 exports.updateLocation = async (req, res) => {
   try {
-    const { latitude, longitude } = req.body;
+    const latitude = Number(req.body.latitude);
+    const longitude = Number(req.body.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      return res.status(400).json({ success: false, message: 'Valid latitude and longitude are required' });
+    }
+    const lastLocationUpdate = new Date();
 
     const deliveryAgent = await DeliveryAgent.findOneAndUpdate(
       { user: req.user.userId },
       {
         currentLocation: { latitude, longitude },
-        lastLocationUpdate: new Date()
+        lastLocationUpdate
       },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
 
-    res.json({ success: true, message: 'Location updated successfully' });
+    res.json({
+      success: true,
+      message: 'Location updated successfully',
+      location: deliveryAgent.currentLocation,
+      lastUpdated: deliveryAgent.lastLocationUpdate
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

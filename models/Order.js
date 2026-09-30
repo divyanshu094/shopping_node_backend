@@ -20,10 +20,12 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded'],
     default: 'pending'
   },
+  inventoryReserved: { type: Boolean, default: false },
   payment: {
     method: { type: String, enum: ['card', 'upi', 'cod', 'wallet'], default: 'cod' },
     status: { type: String, enum: ['pending', 'completed', 'failed', 'refunded'], default: 'pending' },
     transactionId: { type: String },
+    gatewayOrderId: { type: String },
     amount: { type: Number }
   },
   shippingAddress: {

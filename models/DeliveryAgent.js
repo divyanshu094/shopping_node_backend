@@ -10,6 +10,7 @@ const deliveryAgentSchema = new mongoose.Schema({
     latitude: { type: Number },
     longitude: { type: Number }
   },
+  lastLocationUpdate: { type: Date },
   rating: { type: Number, default: 0 },
   totalDeliveries: { type: Number, default: 0 },
   earnings: { type: Number, default: 0 }

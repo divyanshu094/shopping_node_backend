@@ -238,7 +238,10 @@ router.get('/:orderId/track', auth, async (req, res) => {
     const order = await require('../models/Order').findOne({
       _id: req.params.orderId,
       user: req.user.userId
-    }).populate('deliveryAgent');
+    }).populate({
+      path: 'deliveryAgent',
+      populate: { path: 'user', select: 'name phone' }
+    });
 
     if (!order) return res.status(404).json({ message: 'Order not found' });
 

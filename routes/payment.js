@@ -18,10 +18,10 @@ const auth = require('../middleware/auth');
  *           schema:
  *             type: object
  *             required:
- *               - amount
+ *               - orderId
  *             properties:
- *               amount:
- *                 type: number
+ *               orderId:
+ *                 type: string
  *               currency:
  *                 type: string
  *                 default: inr
@@ -83,6 +83,20 @@ router.get('/methods', auth, paymentController.getPaymentMethods);
 
 /**
  * @swagger
+ * /api/payments/webhook:
+ *   post:
+ *     summary: Process a signed Stripe or Razorpay webhook
+ *     tags: [Payments]
+ *     responses:
+ *       200:
+ *         description: Webhook accepted
+ *       400:
+ *         description: Missing or invalid provider signature
+ */
+router.post('/webhook', paymentController.handleWebhook);
+
+/**
+ * @swagger
  * /api/payments/razorpay/create-order:
  *   post:
  *     summary: Create Razorpay payment order
@@ -96,16 +110,10 @@ router.get('/methods', auth, paymentController.getPaymentMethods);
  *           schema:
  *             type: object
  *             required:
- *               - amount
+ *               - orderId
  *             properties:
- *               amount:
- *                 type: number
- *               currency:
+ *               orderId:
  *                 type: string
- *                 default: INR
- *               method:
- *                 type: string
- *                 enum: [upi, netbanking, card, wallets]
  *     responses:
  *       200:
  *         description: Razorpay order created
@@ -168,7 +176,7 @@ router.post('/razorpay/verify', auth, paymentController.verifyRazorpayPayment);
  *       200:
  *         description: Webhook processed
  */
-router.post('/webhook/stripe', express.raw({ type: 'application/json' }), paymentController.handleStripeWebhook);
+router.post('/webhook/stripe', paymentController.handleStripeWebhook);
 
 /**
  * @swagger
@@ -186,6 +194,6 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), paymen
  *       200:
  *         description: Webhook processed
  */
-router.post('/webhook/razorpay', express.raw({ type: 'application/json' }), paymentController.handleRazorpayWebhook);
+router.post('/webhook/razorpay', paymentController.handleRazorpayWebhook);
 
 module.exports = router;

@@ -5,6 +5,46 @@ const User = require('../models/User');
 const DeliveryAgent = require('../models/DeliveryAgent');
 const { v4: uuidv4 } = require('uuid');
 const { publishEvent, TOPICS } = require('../config/kafka');
+const mongoose = require('mongoose');
+
+const restoreInventory = async (items) => {
+  for (const item of items) {
+    await Product.updateOne(
+      { _id: item.product },
+      { $inc: { stock: item.quantity, soldCount: -item.quantity } }
+    );
+  }
+};
+
+const reserveInventory = async (items) => {
+  const quantities = new Map();
+  for (const item of items) {
+    const productId = item.product.toString();
+    quantities.set(productId, (quantities.get(productId) || 0) + item.quantity);
+  }
+
+  const reserved = [];
+  try {
+    for (const [productId, quantity] of quantities) {
+      const result = await Product.updateOne(
+        { _id: productId, isActive: true, stock: { $gte: quantity } },
+        { $inc: { stock: -quantity, soldCount: quantity } }
+      );
+      if (result.modifiedCount !== 1) {
+        const product = await Product.findById(productId);
+        const error = new Error(product ? `Insufficient stock for ${product.name}` : 'Product not found');
+        error.statusCode = product ? 409 : 404;
+        throw error;
+      }
+      reserved.push({ product: productId, quantity });
+    }
+  } catch (error) {
+    await restoreInventory(reserved);
+    throw error;
+  }
+
+  return reserved;
+};
 
 // exports.createOrder = async (req, res) => {
 //   try {
@@ -106,60 +146,81 @@ const { publishEvent, TOPICS } = require('../config/kafka');
 
 exports.createOrder = async (req, res) => {
   try {
-    const {
-      addressId,
-      paymentMethod,
-      items
-    } = req.body;
+    const { addressId, paymentMethod, items, notes } = req.body;
+    const validPaymentMethods = ['card', 'upi', 'cod', 'wallet'];
+    const method = paymentMethod === 'cash' ? 'cod' : paymentMethod;
 
-    let subtotal = 0;
-
-    const orderItems = [];
-
-    for (const item of items) {
-
-      const product = await Product.findById(item.product);
-
-      if (!product) {
-        return res.status(404).json({
-          message: 'Product not found'
-        });
-      }
-
-      subtotal += product.price * item.quantity;
-
-      orderItems.push({
-        product: product._id,
-        quantity: item.quantity,
-        price: product.price
-      });
+    if (!addressId || !validPaymentMethods.includes(method) || !Array.isArray(items) || !items.length) {
+      return res.status(400).json({ success: false, message: 'Address, payment method, and items are required' });
     }
 
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    const address = user.addresses.id(addressId);
+    if (!address) return res.status(400).json({ success: false, message: 'Delivery address not found' });
+
+    let subtotal = 0;
+    const orderItems = [];
+    const products = new Map();
+    const quantities = new Map();
+
+    for (const item of items) {
+      const quantity = Number(item.quantity);
+      if (!mongoose.isValidObjectId(item.product) || !Number.isInteger(quantity) || quantity < 1) {
+        return res.status(400).json({ success: false, message: 'Each item needs a product and positive quantity' });
+      }
+
+      const productId = item.product.toString();
+      let product = products.get(productId);
+      if (!product) {
+        product = await Product.findById(productId);
+        products.set(productId, product);
+      }
+      if (!product || !product.isActive) {
+        return res.status(404).json({ success: false, message: 'Product not found' });
+      }
+
+      const price = Number(product.price);
+      if (!Number.isFinite(price) || price < 0) {
+        return res.status(400).json({ success: false, message: `${product.name} has an invalid price` });
+      }
+
+      subtotal += price * quantity;
+      orderItems.push({ product: product._id, quantity, price });
+      quantities.set(productId, (quantities.get(productId) || 0) + quantity);
+    }
+
+    for (const [productId, quantity] of quantities) {
+      if (products.get(productId).stock < quantity) {
+        return res.status(409).json({ success: false, message: `${products.get(productId).name} does not have enough stock` });
+      }
+    }
+
+    subtotal = Math.round(subtotal * 100) / 100;
+    const reservations = await reserveInventory(orderItems);
     const order = new Order({
       user: req.user.userId,
-
-      shippingAddress: addressId,
-
+      shippingAddress: address._id,
       items: orderItems,
-
       subtotal,
-
       total: subtotal,
-
-      payment: {
-        method: paymentMethod
-      }
+      payment: { method, amount: subtotal },
+      inventoryReserved: true,
+      tracking: { trackingNumber: `ORD-${uuidv4().substring(0, 8).toUpperCase()}` },
+      notes: typeof notes === 'string' ? notes.trim() : undefined
     });
 
-    await order.save();
-
-    res.status(201).json(order);
+    try {
+      await order.save();
+    } catch (error) {
+      await restoreInventory(reservations);
+      throw error;
+    }
+    res.status(201).json({ success: true, order });
 
   } catch (err) {
-
-    res.status(500).json({
-      message: err.message
-    });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 };
 
@@ -218,16 +279,19 @@ exports.cancelOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Order cannot be cancelled at this stage' });
     }
 
-    order.status = 'cancelled';
-
-    // Restore product stock
-    for (const item of order.items) {
-      await Product.findByIdAndUpdate(item.product, {
-        $inc: { stock: item.quantity, soldCount: -item.quantity }
-      });
+    const reservedItems = order.inventoryReserved ? order.items : [];
+    if (reservedItems.length) {
+      await restoreInventory(reservedItems);
     }
 
-    await order.save();
+    order.status = 'cancelled';
+    order.inventoryReserved = false;
+    try {
+      await order.save();
+    } catch (error) {
+      if (reservedItems.length) await reserveInventory(reservedItems);
+      throw error;
+    }
     res.json({ success: true, message: 'Order cancelled successfully', order });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -243,16 +307,7 @@ exports.reorder = async (req, res) => {
 
     if (!originalOrder) return res.status(404).json({ success: false, message: 'Order not found' });
 
-    // Check stock availability
-    for (const item of originalOrder.items) {
-      const product = await Product.findById(item.product);
-      if (!product || product.stock < item.quantity) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for ${product?.name || 'a product'}`
-        });
-      }
-    }
+    const reservations = await reserveInventory(originalOrder.items);
 
     const newOrder = new Order({
       user: req.user.userId,
@@ -263,24 +318,27 @@ exports.reorder = async (req, res) => {
       discount: originalOrder.discount,
       coupon: originalOrder.coupon,
       shippingAddress: originalOrder.shippingAddress,
-      payment: originalOrder.payment
+      payment: {
+        method: originalOrder.payment.method,
+        status: 'pending',
+        amount: originalOrder.total
+      },
+      inventoryReserved: true
     });
 
     newOrder.tracking.trackingNumber = `ORD-${uuidv4().substring(0, 8).toUpperCase()}`;
 
-    await newOrder.save();
-
-    // Update product stock
-    for (const item of originalOrder.items) {
-      await Product.findByIdAndUpdate(item.product, {
-        $inc: { stock: -item.quantity, soldCount: item.quantity }
-      });
+    try {
+      await newOrder.save();
+    } catch (error) {
+      await restoreInventory(reservations);
+      throw error;
     }
 
     await newOrder.populate(['items.product', 'coupon']);
     res.status(201).json({ success: true, order: newOrder });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 };
 

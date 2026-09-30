@@ -2,6 +2,51 @@ const express = require('express');
 const router = express.Router();
 const deliveryController = require('../controllers/deliveryController');
 const deliveryAuth = require('../middleware/delivery');
+const auth = require('../middleware/auth');
+
+/**
+ * @swagger
+ * /api/delivery/agents/{agentId}/location:
+ *   get:
+ *     summary: Get assigned delivery agent location
+ *     tags: [Delivery]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: agentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Current location for an agent assigned to the caller's order
+ *       404:
+ *         description: Delivery agent not found
+ */
+router.get('/agents/:agentId/location', auth, deliveryController.getAgentLocation);
+
+/**
+ * @swagger
+ * /api/delivery/eta/{orderId}:
+ *   get:
+ *     summary: Get order delivery ETA
+ *     tags: [Delivery]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Order status and estimated delivery time
+ *       404:
+ *         description: Order not found
+ */
+router.get('/eta/:orderId', auth, deliveryController.getEta);
 
 /**
  * @swagger
@@ -52,7 +97,7 @@ router.post('/login', deliveryController.login);
  *       401:
  *         description: Unauthorized
  */
-router.get('/orders', deliveryAuth, deliveryController.getOrders);
+router.get('/orders', auth, deliveryAuth, deliveryController.getOrders);
 
 /**
  * @swagger
@@ -78,7 +123,7 @@ router.get('/orders', deliveryAuth, deliveryController.getOrders);
  *       404:
  *         description: Order not found
  */
-router.put('/orders/:orderId/accept', deliveryAuth, deliveryController.acceptOrder);
+router.put('/orders/:orderId/accept', auth, deliveryAuth, deliveryController.acceptOrder);
 
 /**
  * @swagger
@@ -102,7 +147,7 @@ router.put('/orders/:orderId/accept', deliveryAuth, deliveryController.acceptOrd
  *       404:
  *         description: Order not found
  */
-router.put('/orders/:orderId/picked', deliveryAuth, deliveryController.markPicked);
+router.put('/orders/:orderId/picked', auth, deliveryAuth, deliveryController.markPicked);
 
 /**
  * @swagger
@@ -126,7 +171,7 @@ router.put('/orders/:orderId/picked', deliveryAuth, deliveryController.markPicke
  *       404:
  *         description: Order not found
  */
-router.put('/orders/:orderId/delivered', deliveryAuth, deliveryController.markDelivered);
+router.put('/orders/:orderId/delivered', auth, deliveryAuth, deliveryController.markDelivered);
 
 /**
  * @swagger
@@ -142,7 +187,7 @@ router.put('/orders/:orderId/delivered', deliveryAuth, deliveryController.markDe
  *       401:
  *         description: Unauthorized
  */
-router.get('/earnings', deliveryAuth, deliveryController.getEarnings);
+router.get('/earnings', auth, deliveryAuth, deliveryController.getEarnings);
 
 /**
  * @swagger
@@ -172,6 +217,6 @@ router.get('/earnings', deliveryAuth, deliveryController.getEarnings);
  *       401:
  *         description: Unauthorized
  */
-router.put('/location', deliveryAuth, deliveryController.updateLocation);
+router.put('/location', auth, deliveryAuth, deliveryController.updateLocation);
 
 module.exports = router;

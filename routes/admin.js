@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const admin = require('../middleware/admin');
+const auth = require('../middleware/auth');
 
 /**
  * @swagger
@@ -76,7 +77,7 @@ router.post('/login', adminController.login);
  *       403:
  *         description: Admin access required
  */
-router.get('/orders', admin, adminController.getOrders);
+router.get('/orders', auth, admin, adminController.getOrders);
 
 /**
  * @swagger
@@ -113,7 +114,7 @@ router.get('/orders', admin, adminController.getOrders);
  *       403:
  *         description: Admin access required
  */
-router.get('/users', admin, adminController.getUsers);
+router.get('/users', auth, admin, adminController.getUsers);
 
 /**
  * @swagger
@@ -154,7 +155,7 @@ router.get('/users', admin, adminController.getUsers);
  *       403:
  *         description: Admin access required
  */
-router.get('/products', admin, adminController.getProducts);
+router.get('/products', auth, admin, adminController.getProducts);
 
 /**
  * @swagger
@@ -201,7 +202,7 @@ router.get('/products', admin, adminController.getProducts);
  *       403:
  *         description: Admin access required
  */
-router.post('/products', admin, adminController.createProduct);
+router.post('/products', auth, admin, adminController.createProduct);
 
 /**
  * @swagger
@@ -252,7 +253,7 @@ router.post('/products', admin, adminController.createProduct);
  *       404:
  *         description: Product not found
  */
-router.put('/products/:productId', admin, adminController.updateProduct);
+router.put('/products/:productId', auth, admin, adminController.updateProduct);
 
 /**
  * @swagger
@@ -278,7 +279,7 @@ router.put('/products/:productId', admin, adminController.updateProduct);
  *       404:
  *         description: Product not found
  */
-router.delete('/products/:productId', admin, adminController.deleteProduct);
+router.delete('/products/:productId', auth, admin, adminController.deleteProduct);
 
 /**
  * @swagger
@@ -317,7 +318,7 @@ router.delete('/products/:productId', admin, adminController.deleteProduct);
  *       403:
  *         description: Admin access required
  */
-router.post('/categories', admin, adminController.createCategory);
+router.post('/categories', auth, admin, adminController.createCategory);
 
 /**
  * @swagger
@@ -362,7 +363,7 @@ router.post('/categories', admin, adminController.createCategory);
  *       404:
  *         description: Category not found
  */
-router.put('/categories/:categoryId', admin, adminController.updateCategory);
+router.put('/categories/:categoryId', auth, admin, adminController.updateCategory);
 
 /**
  * @swagger
@@ -387,7 +388,7 @@ router.put('/categories/:categoryId', admin, adminController.updateCategory);
  *       403:
  *         description: Admin access required
  */
-router.get('/analytics', admin, adminController.getAnalytics);
+router.get('/analytics', auth, admin, adminController.getAnalytics);
 
 /**
  * @swagger
@@ -405,6 +406,6 @@ router.get('/analytics', admin, adminController.getAnalytics);
  *       403:
  *         description: Admin access required
  */
-router.get('/delivery-agents', admin, adminController.getDeliveryAgents);
+router.get('/delivery-agents', auth, admin, adminController.getDeliveryAgents);
 
 module.exports = router;

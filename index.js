@@ -20,7 +20,13 @@ const io = socketIo(server, {
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buffer) => {
+    if (req.originalUrl.startsWith('/api/payments/webhook')) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  }
+}));
 
 // Define Swagger configuration options
 const options = {
@@ -48,22 +54,22 @@ mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/grocery')
 .catch((err) => console.error('MongoDB connection error:', err));
 
 // Initialize Kafka
-// const { initKafka, consumeEvents } = require('./config/kafka');
-// const { startEventConsumer } = require('./services/eventConsumer');
+const startKafkaServices = async () => {
+  try {
+    const { initKafka } = require('./config/kafka');
+    const { startEventConsumer } = require('./services/eventConsumer');
 
-// initKafka().then(() => {
-//   console.log('Kafka initialized successfully');
+    await initKafka();
+    await startEventConsumer();
+    console.log('Kafka event consumer started');
+  } catch (error) {
+    console.error('Kafka services failed to start:', error.message);
+  }
+};
 
-//   // Start event consumer
-//   startEventConsumer().then(() => {
-//     console.log('Event consumer started successfully');
-//   }).catch((err) => {
-//     console.error('Event consumer failed to start:', err);
-//   });
-// }).catch((err) => {
-//   console.error('Kafka initialization failed:', err);
-//   // Don't exit process, continue with server startup
-// });
+if (process.env.KAFKA_ENABLED !== 'false') {
+  startKafkaServices();
+}
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
@@ -102,6 +108,10 @@ app.use('/api/home', homeRoutes);
 
 const categoryRoutes = require('./routes/category');
 app.use('/api/categories', categoryRoutes);
+app.use('/api', homeRoutes);
+
+const locationController = require('./controllers/locationController');
+app.get('/api/stores/nearby', locationController.getNearbyStores);
 
 const paymentRoutes = require('./routes/payment');
 app.use('/api/payments', paymentRoutes);
@@ -143,3 +153,16 @@ app.get('/', (req, res) => {
 server.listen(PORT,  '0.0.0.0',() => {
   console.log(`Server running on port ${PORT}`);
 }); 
+
+const shutdown = async () => {
+  server.close();
+  if (process.env.KAFKA_ENABLED !== 'false') {
+    const { disconnectKafka } = require('./config/kafka');
+    await disconnectKafka();
+  }
+  await mongoose.disconnect();
+  process.exit(0);
+};
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
