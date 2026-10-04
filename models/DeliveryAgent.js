@@ -6,6 +6,7 @@ const deliveryAgentSchema = new mongoose.Schema({
   vehicleNumber: { type: String },
   licenseNumber: { type: String },
   isAvailable: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: true },
   currentLocation: {
     latitude: { type: Number },
     longitude: { type: Number }

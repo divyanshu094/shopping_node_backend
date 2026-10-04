@@ -429,5 +429,7 @@ router.get('/categories', auth, admin, adminController.getCategories);
  */
 router.get('/delivery-agents', auth, admin, adminController.getDeliveryAgents);
 router.post('/delivery-agents', auth, admin, adminController.createDeliveryAgent);
+router.put('/delivery-agents/:agentId', auth, admin, adminController.updateDeliveryAgent);
+router.delete('/delivery-agents/:agentId', auth, admin, adminController.deleteDeliveryAgent);
 
 module.exports = router;

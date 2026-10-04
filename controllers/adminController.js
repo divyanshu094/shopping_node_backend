@@ -299,6 +299,86 @@ exports.createDeliveryAgent = async (req, res) => {
   }
 };
 
+exports.updateDeliveryAgent = async (req, res) => {
+  try {
+    const deliveryAgent = await DeliveryAgent.findById(req.params.agentId).populate('user', 'name email phone');
+    if (!deliveryAgent || !deliveryAgent.user) {
+      return res.status(404).json({ success: false, message: 'Delivery agent not found' });
+    }
+
+    const { name, phone, vehicleType, vehicleNumber, licenseNumber, isActive } = req.body;
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : undefined;
+
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+      return res.status(400).json({ success: false, message: 'Name is required' });
+    }
+    if (email !== undefined && !email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+    if (email && await User.exists({ email, _id: { $ne: deliveryAgent.user._id } })) {
+      return res.status(409).json({ success: false, message: 'An account with this email already exists' });
+    }
+    if (vehicleType !== undefined && !['bike', 'car', 'truck'].includes(vehicleType)) {
+      return res.status(400).json({ success: false, message: 'Unsupported vehicle type' });
+    }
+    if (isActive !== undefined && typeof isActive !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'Account status must be active or inactive' });
+    }
+
+    if (isActive === false && await Order.exists({
+      deliveryAgent: deliveryAgent._id,
+      status: { $in: ['processing', 'shipped'] }
+    })) {
+      return res.status(409).json({
+        success: false,
+        message: 'This delivery partner has an active order. Complete the order before deactivating the account.'
+      });
+    }
+
+    if (name !== undefined) deliveryAgent.user.name = name.trim();
+    if (email !== undefined) deliveryAgent.user.email = email;
+    if (phone !== undefined) deliveryAgent.user.phone = phone;
+    if (vehicleType !== undefined) deliveryAgent.vehicleType = vehicleType;
+    if (vehicleNumber !== undefined) deliveryAgent.vehicleNumber = vehicleNumber;
+    if (licenseNumber !== undefined) deliveryAgent.licenseNumber = licenseNumber;
+    if (isActive !== undefined) deliveryAgent.isActive = isActive;
+
+    await deliveryAgent.user.save();
+    await deliveryAgent.save();
+    await deliveryAgent.populate('user', 'name email phone');
+    res.json({ success: true, deliveryAgent });
+  } catch (err) {
+    res.status(err.code === 11000 ? 409 : 500).json({
+      success: false,
+      message: err.code === 11000 ? 'An account with this email already exists' : err.message
+    });
+  }
+};
+
+exports.deleteDeliveryAgent = async (req, res) => {
+  try {
+    const deliveryAgent = await DeliveryAgent.findById(req.params.agentId);
+    if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
+
+    if (await Order.exists({
+      deliveryAgent: deliveryAgent._id,
+      status: { $in: ['processing', 'shipped'] }
+    })) {
+      return res.status(409).json({
+        success: false,
+        message: 'This delivery partner has an active order. Complete the order before deleting the account.'
+      });
+    }
+
+    await Order.updateMany({ deliveryAgent: deliveryAgent._id }, { $unset: { deliveryAgent: '' } });
+    await DeliveryAgent.findByIdAndDelete(deliveryAgent._id);
+    await User.findOneAndDelete({ _id: deliveryAgent.user, isDeliveryPartner: true });
+    res.json({ success: true, message: 'Delivery partner deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 exports.getCategories = async (req, res) => {
   try {
     const categories = await Category.find()

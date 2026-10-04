@@ -14,6 +14,10 @@ exports.login = async (req, res) => {
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ success: false, message: 'Invalid credentials' });
+    const deliveryAgent = await DeliveryAgent.findOne({ user: user._id, isActive: { $ne: false } });
+    if (!deliveryAgent) {
+      return res.status(403).json({ success: false, message: 'This delivery account is inactive' });
+    }
 
     const token = jwt.sign(
       { userId: user._id, isDeliveryPartner: true },
