@@ -1,4 +1,5 @@
 const Order = require('../models/Order');
+const DeliveryAgent = require('../models/DeliveryAgent');
 
 class SocketService {
   constructor(io) {
@@ -19,15 +20,21 @@ class SocketService {
       // Handle order tracking subscription
       socket.on('subscribe-order-tracking', async (orderId) => {
         try {
-          // Verify user has access to this order
-          const order = await Order.findOne({
-            _id: orderId,
-            $or: [
-              { user: socket.userId },
-              { deliveryAgent: socket.userId },
-              // Admin can subscribe to any order
-              ...(socket.isAdmin ? [{}] : [])
-            ]
+          const deliveryAgent = socket.isDeliveryPartner
+            ? await DeliveryAgent.findOne({ user: socket.userId }).select('_id')
+            : null;
+          const accessFilter = socket.isAdmin
+            ? { _id: orderId }
+            : {
+                _id: orderId,
+                $or: [
+                  { user: socket.userId },
+                  ...(deliveryAgent ? [{ deliveryAgent: deliveryAgent._id }] : [])
+                ]
+              };
+          const order = await Order.findOne(accessFilter).populate({
+            path: 'deliveryAgent',
+            populate: { path: 'user', select: 'name phone' }
           });
 
           if (!order) {
@@ -84,23 +91,38 @@ class SocketService {
             return;
           }
 
-          const { latitude, longitude, orderId } = data;
+          const latitude = Number(data?.latitude);
+          const longitude = Number(data?.longitude);
+          const { orderId } = data || {};
+          if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+            !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+            socket.emit('error', { message: 'Valid latitude and longitude are required' });
+            return;
+          }
 
-          // Update delivery agent location in database
-          const DeliveryAgent = require('../models/DeliveryAgent');
-          await DeliveryAgent.findOneAndUpdate(
+          const deliveryAgent = await DeliveryAgent.findOneAndUpdate(
             { user: socket.userId },
-            {
-              location: { latitude, longitude },
-              lastLocationUpdate: new Date()
-            }
+            { currentLocation: { latitude, longitude }, lastLocationUpdate: new Date() },
+            { new: true }
           );
+          if (!deliveryAgent) {
+            socket.emit('error', { message: 'Delivery agent profile not found' });
+            return;
+          }
 
-          // If orderId is provided, emit location update to order subscribers
           if (orderId) {
+            const assignedOrder = await Order.exists({
+              _id: orderId,
+              deliveryAgent: deliveryAgent._id,
+              status: 'shipped'
+            });
+            if (!assignedOrder) {
+              socket.emit('error', { message: 'Order is not assigned to this delivery partner' });
+              return;
+            }
             this.io.to(`order-${orderId}`).emit('delivery-location-update', {
               orderId,
-              deliveryAgentId: socket.userId,
+              deliveryAgentId: deliveryAgent._id,
               location: { latitude, longitude },
               timestamp: new Date()
             });

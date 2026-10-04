@@ -1,13 +1,64 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const Razorpay = require('razorpay');
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
+const PaymentTransaction = require('../models/PaymentTransaction');
 const { publishEvent, TOPICS } = require('../config/kafka');
+const { recordPaymentTransaction } = require('../services/paymentLedger');
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
+
+const listTransactions = async (req, res, adminView) => {
+  try {
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 25));
+    const query = adminView ? {} : { user: req.user.userId };
+
+    if (adminView && req.query.userId) {
+      if (!mongoose.isValidObjectId(req.query.userId)) {
+        return res.status(400).json({ success: false, message: 'Invalid user ID' });
+      }
+      query.user = req.query.userId;
+    }
+    if (req.query.orderId) {
+      if (!mongoose.isValidObjectId(req.query.orderId)) {
+        return res.status(400).json({ success: false, message: 'Invalid order ID' });
+      }
+      query.order = req.query.orderId;
+    }
+    if (req.query.provider) query.provider = req.query.provider;
+    if (req.query.status) query.status = req.query.status;
+    if (req.query.type) query.type = req.query.type;
+
+    const [transactions, total] = await Promise.all([
+      PaymentTransaction.find(query)
+        .populate('order', 'status tracking.trackingNumber')
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+      PaymentTransaction.countDocuments(query)
+    ]);
+
+    res.json({
+      success: true,
+      transactions,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getTransactions = (req, res) => listTransactions(req, res, false);
+exports.getAllTransactions = (req, res) => listTransactions(req, res, true);
 
 exports.createOrder = async (req, res) => {
   try {
@@ -41,6 +92,17 @@ exports.createOrder = async (req, res) => {
     order.payment.gatewayOrderId = paymentIntent.id;
     order.payment.amount = order.total;
     await order.save();
+    await recordPaymentTransaction({
+      order: order._id,
+      user: order.user,
+      provider: 'stripe',
+      status: 'pending',
+      amountMinor: amount,
+      currency: paymentIntent.currency,
+      method: order.payment.method,
+      gatewayOrderId: paymentIntent.id,
+      gatewayPaymentId: paymentIntent.id
+    });
 
     // Publish payment order created event
     await publishEvent(TOPICS.PAYMENT_EVENTS, {
@@ -75,6 +137,17 @@ exports.verifyPayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
     if (order.payment.status === 'completed' && order.payment.transactionId === paymentIntentId) {
+      await recordPaymentTransaction({
+        order: order._id,
+        user: order.user,
+        provider: 'stripe',
+        status: 'completed',
+        amountMinor: Math.round(order.total * 100),
+        currency: 'INR',
+        method: order.payment.method,
+        gatewayOrderId: paymentIntentId,
+        gatewayPaymentId: paymentIntentId
+      });
       return res.json({ success: true, message: 'Payment already verified' });
     }
     if (order.payment.gatewayOrderId !== paymentIntentId) {
@@ -90,8 +163,19 @@ exports.verifyPayment = async (req, res) => {
     if (paymentIntent.status === 'succeeded') {
       order.payment.status = 'completed';
       order.payment.transactionId = paymentIntentId;
-      order.status = 'confirmed';
+      order.status = 'processing';
       await order.save();
+      await recordPaymentTransaction({
+        order: order._id,
+        user: order.user,
+        provider: 'stripe',
+        status: 'completed',
+        amountMinor: paymentIntent.amount,
+        currency: paymentIntent.currency,
+        method: order.payment.method,
+        gatewayOrderId: paymentIntentId,
+        gatewayPaymentId: paymentIntentId
+      });
 
       await publishEvent(TOPICS.PAYMENT_EVENTS, {
         eventType: 'PAYMENT_SUCCESS',
@@ -112,7 +196,20 @@ exports.verifyPayment = async (req, res) => {
 
       res.json({ success: true, message: 'Payment verified successfully' });
     } else {
-      // Publish payment failed event
+      const failed = ['requires_payment_method', 'canceled'].includes(paymentIntent.status);
+      await recordPaymentTransaction({
+        order: order._id,
+        user: order.user,
+        provider: 'stripe',
+        status: failed ? (paymentIntent.status === 'canceled' ? 'cancelled' : 'failed') : 'pending',
+        amountMinor: paymentIntent.amount,
+        currency: paymentIntent.currency,
+        method: order.payment.method,
+        gatewayOrderId: paymentIntentId,
+        gatewayPaymentId: paymentIntentId,
+        failureCode: paymentIntent.last_payment_error?.code,
+        failureDescription: paymentIntent.last_payment_error?.message || paymentIntent.status
+      });
       await publishEvent(TOPICS.PAYMENT_EVENTS, {
         eventType: 'PAYMENT_FAILED',
         paymentIntentId,
@@ -157,6 +254,16 @@ exports.createRazorpayOrder = async (req, res) => {
     order.payment.gatewayOrderId = razorpayOrder.id;
     order.payment.amount = order.total;
     await order.save();
+    await recordPaymentTransaction({
+      order: order._id,
+      user: order.user,
+      provider: 'razorpay',
+      status: 'pending',
+      amountMinor: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      method: order.payment.method,
+      gatewayOrderId: razorpayOrder.id
+    });
 
     // Publish razorpay order created event
     await publishEvent(TOPICS.PAYMENT_EVENTS, {
@@ -200,6 +307,17 @@ exports.verifyRazorpayPayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
     if (order.payment.status === 'completed' && order.payment.transactionId === razorpay_payment_id) {
+      await recordPaymentTransaction({
+        order: order._id,
+        user: order.user,
+        provider: 'razorpay',
+        status: 'completed',
+        amountMinor: Math.round(order.total * 100),
+        currency: 'INR',
+        method: order.payment.method,
+        gatewayOrderId: razorpay_order_id,
+        gatewayPaymentId: razorpay_payment_id
+      });
       return res.json({ success: true, message: 'Payment already verified' });
     }
     if (order.payment.gatewayOrderId !== razorpay_order_id) {
@@ -214,6 +332,19 @@ exports.verifyRazorpayPayment = async (req, res) => {
       crypto.timingSafeEqual(Buffer.from(expectedSignature, 'hex'), Buffer.from(razorpay_signature, 'hex'));
 
     if (!signatureIsValid) {
+      await recordPaymentTransaction({
+        order: order._id,
+        user: order.user,
+        provider: 'razorpay',
+        status: 'failed',
+        amountMinor: Math.round(order.total * 100),
+        currency: 'INR',
+        method: order.payment.method,
+        gatewayOrderId: razorpay_order_id,
+        gatewayPaymentId: razorpay_payment_id,
+        failureCode: 'invalid_signature',
+        failureDescription: 'Payment signature verification failed'
+      });
       // Publish payment failed event
       await publishEvent(TOPICS.PAYMENT_EVENTS, {
         eventType: 'PAYMENT_FAILED',
@@ -227,8 +358,19 @@ exports.verifyRazorpayPayment = async (req, res) => {
 
     order.payment.status = 'completed';
     order.payment.transactionId = razorpay_payment_id;
-    order.status = 'confirmed';
+    order.status = 'processing';
     await order.save();
+    await recordPaymentTransaction({
+      order: order._id,
+      user: order.user,
+      provider: 'razorpay',
+      status: 'completed',
+      amountMinor: Math.round(order.total * 100),
+      currency: 'INR',
+      method: order.payment.method,
+      gatewayOrderId: razorpay_order_id,
+      gatewayPaymentId: razorpay_payment_id
+    });
 
     await publishEvent(TOPICS.PAYMENT_EVENTS, {
       eventType: 'PAYMENT_SUCCESS',
@@ -289,21 +431,49 @@ exports.handleStripeWebhook = async (req, res) => {
     switch (event.type) {
       case 'payment_intent.succeeded':
         const paymentIntent = event.data.object;
-        await Order.findOneAndUpdate(
-          { 'payment.gatewayOrderId': paymentIntent.id },
-          {
-            'payment.status': 'completed',
-            'payment.transactionId': paymentIntent.id,
-            status: 'confirmed'
-          }
-        );
+        const paidOrder = await Order.findOne({ 'payment.gatewayOrderId': paymentIntent.id });
+        if (paidOrder) {
+          paidOrder.payment.status = 'completed';
+          paidOrder.payment.transactionId = paymentIntent.id;
+          paidOrder.status = 'processing';
+          await paidOrder.save();
+          await recordPaymentTransaction({
+            order: paidOrder._id,
+            user: paidOrder.user,
+            provider: 'stripe',
+            status: 'completed',
+            amountMinor: paymentIntent.amount,
+            currency: paymentIntent.currency,
+            method: paidOrder.payment.method,
+            gatewayOrderId: paymentIntent.id,
+            gatewayPaymentId: paymentIntent.id,
+            gatewayEventId: event.id
+          });
+        }
         break;
       case 'payment_intent.payment_failed':
         const failedPayment = event.data.object;
-        await Order.findOneAndUpdate(
-          { 'payment.gatewayOrderId': failedPayment.id },
-          { 'payment.status': 'failed' }
-        );
+        const failedOrder = await Order.findOne({ 'payment.gatewayOrderId': failedPayment.id });
+        if (failedOrder) {
+          if (failedOrder.payment.status !== 'completed') {
+            failedOrder.payment.status = 'failed';
+            await failedOrder.save();
+          }
+          await recordPaymentTransaction({
+            order: failedOrder._id,
+            user: failedOrder.user,
+            provider: 'stripe',
+            status: 'failed',
+            amountMinor: failedPayment.amount,
+            currency: failedPayment.currency,
+            method: failedOrder.payment.method,
+            gatewayOrderId: failedPayment.id,
+            gatewayPaymentId: failedPayment.id,
+            failureCode: failedPayment.last_payment_error?.code,
+            failureDescription: failedPayment.last_payment_error?.message,
+            gatewayEventId: event.id
+          });
+        }
         break;
       default:
         console.log(`Unhandled event type ${event.type}`);
@@ -333,20 +503,51 @@ exports.handleRazorpayWebhook = async (req, res) => {
       ? req.body
       : JSON.parse(rawBody.toString('utf8'));
 
-    switch (event.event) {
-      case 'payment.authorized':
-      case 'payment.captured':
-        const payment = event.payload.payment.entity;
-        await Order.findOneAndUpdate(
-          { 'payment.gatewayOrderId': payment.order_id },
-          {
-            'payment.status': 'completed',
-            'payment.transactionId': payment.id,
-            status: 'confirmed'
-          }
-        );
+    const gatewayEventId = req.headers['x-razorpay-event-id'];
 
-        // Publish payment success event
+    switch (event.event) {
+      case 'payment.authorized': {
+        const payment = event.payload.payment.entity;
+        const order = await Order.findOne({ 'payment.gatewayOrderId': payment.order_id });
+        if (order) {
+          await recordPaymentTransaction({
+            order: order._id,
+            user: order.user,
+            provider: 'razorpay',
+            status: 'authorized',
+            amountMinor: payment.amount,
+            currency: payment.currency,
+            method: payment.method || order.payment.method,
+            gatewayOrderId: payment.order_id,
+            gatewayPaymentId: payment.id,
+            gatewayEventId
+          });
+        }
+        break;
+      }
+
+      case 'payment.captured': {
+        const payment = event.payload.payment.entity;
+        const order = await Order.findOne({ 'payment.gatewayOrderId': payment.order_id });
+        if (order) {
+          order.payment.status = 'completed';
+          order.payment.transactionId = payment.id;
+          order.status = 'processing';
+          await order.save();
+          await recordPaymentTransaction({
+            order: order._id,
+            user: order.user,
+            provider: 'razorpay',
+            status: 'completed',
+            amountMinor: payment.amount,
+            currency: payment.currency,
+            method: payment.method || order.payment.method,
+            gatewayOrderId: payment.order_id,
+            gatewayPaymentId: payment.id,
+            gatewayEventId
+          });
+        }
+
         await publishEvent(TOPICS.PAYMENT_EVENTS, {
           eventType: 'RAZORPAY_PAYMENT_CAPTURED',
           razorpayPaymentId: payment.id,
@@ -354,30 +555,63 @@ exports.handleRazorpayWebhook = async (req, res) => {
           currency: payment.currency
         });
         break;
+      }
 
-      case 'payment.failed':
+      case 'payment.failed': {
         const failedPayment = event.payload.payment.entity;
-        await Order.findOneAndUpdate(
-          { 'payment.gatewayOrderId': failedPayment.order_id },
-          { 'payment.status': 'failed', 'payment.transactionId': failedPayment.id }
-        );
+        const order = await Order.findOne({ 'payment.gatewayOrderId': failedPayment.order_id });
+        if (order) {
+          if (order.payment.status !== 'completed') {
+            order.payment.status = 'failed';
+            await order.save();
+          }
+          await recordPaymentTransaction({
+            order: order._id,
+            user: order.user,
+            provider: 'razorpay',
+            status: 'failed',
+            amountMinor: failedPayment.amount,
+            currency: failedPayment.currency,
+            method: failedPayment.method || order.payment.method,
+            gatewayOrderId: failedPayment.order_id,
+            gatewayPaymentId: failedPayment.id,
+            failureCode: failedPayment.error_code,
+            failureDescription: failedPayment.error_description,
+            gatewayEventId
+          });
+        }
 
-        // Publish payment failed event
         await publishEvent(TOPICS.PAYMENT_EVENTS, {
           eventType: 'RAZORPAY_PAYMENT_FAILED',
           razorpayPaymentId: failedPayment.id,
           reason: failedPayment.description
         });
         break;
+      }
 
-      case 'refund.created':
+      case 'refund.created': {
         const refund = event.payload.refund.entity;
-        await Order.findOneAndUpdate(
-          { 'payment.transactionId': refund.payment_id },
-          { 'payment.status': 'refunded' }
-        );
+        const order = await Order.findOne({ 'payment.transactionId': refund.payment_id });
+        if (order) {
+          order.payment.status = 'refunded';
+          order.status = 'refunded';
+          await order.save();
+          await recordPaymentTransaction({
+            order: order._id,
+            user: order.user,
+            provider: 'razorpay',
+            type: 'refund',
+            status: 'completed',
+            amountMinor: refund.amount,
+            currency: refund.currency || 'INR',
+            method: order.payment.method,
+            gatewayOrderId: order.payment.gatewayOrderId,
+            gatewayPaymentId: refund.payment_id,
+            gatewayRefundId: refund.id,
+            gatewayEventId
+          });
+        }
 
-        // Publish refund event
         await publishEvent(TOPICS.PAYMENT_EVENTS, {
           eventType: 'RAZORPAY_REFUND_CREATED',
           razorpayPaymentId: refund.payment_id,
@@ -385,6 +619,7 @@ exports.handleRazorpayWebhook = async (req, res) => {
           amount: refund.amount / 100
         });
         break;
+      }
 
       default:
         console.log(`Unhandled Razorpay event: ${event.event}`);

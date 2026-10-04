@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const paymentController = require('../controllers/paymentController');
 const auth = require('../middleware/auth');
+const admin = require('../middleware/admin');
+
+router.get('/transactions', auth, paymentController.getTransactions);
+router.get('/admin/transactions', auth, admin, paymentController.getAllTransactions);
 
 /**
  * @swagger

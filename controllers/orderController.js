@@ -5,6 +5,7 @@ const User = require('../models/User');
 const DeliveryAgent = require('../models/DeliveryAgent');
 const { v4: uuidv4 } = require('uuid');
 const { publishEvent, TOPICS } = require('../config/kafka');
+const { recordPaymentTransaction } = require('../services/paymentLedger');
 const mongoose = require('mongoose');
 
 const restoreInventory = async (items) => {
@@ -27,12 +28,13 @@ const reserveInventory = async (items) => {
   try {
     for (const [productId, quantity] of quantities) {
       const result = await Product.updateOne(
-        { _id: productId, isActive: true, stock: { $gte: quantity } },
+        { _id: productId, isActive: { $ne: false }, stock: { $gte: quantity } },
         { $inc: { stock: -quantity, soldCount: quantity } }
       );
       if (result.modifiedCount !== 1) {
         const product = await Product.findById(productId);
-        const error = new Error(product ? `Insufficient stock for ${product.name}` : 'Product not found');
+        const productName = product?.name || product?.title || productId;
+        const error = new Error(product ? `Insufficient stock for ${productName}` : 'Product not found');
         error.statusCode = product ? 409 : 404;
         throw error;
       }
@@ -203,6 +205,7 @@ exports.createOrder = async (req, res) => {
       user: req.user.userId,
       shippingAddress: address._id,
       items: orderItems,
+      status: method === 'cod' ? 'processing' : 'pending',
       subtotal,
       total: subtotal,
       payment: { method, amount: subtotal },
@@ -216,6 +219,26 @@ exports.createOrder = async (req, res) => {
     } catch (error) {
       await restoreInventory(reservations);
       throw error;
+    }
+    await publishEvent(TOPICS.ORDER_EVENTS, {
+      eventType: 'ORDER_CREATED',
+      orderId: order._id.toString(),
+      userId: req.user.userId,
+      total: order.total,
+      items: order.items.length,
+      paymentMethod: method
+    });
+    if (method === 'cod') {
+      await recordPaymentTransaction({
+        order: order._id,
+        user: order.user,
+        provider: 'cash',
+        status: 'pending',
+        amountMinor: Math.round(order.total * 100),
+        currency: 'INR',
+        method,
+        gatewayOrderId: `cod:${order._id}`
+      });
     }
     res.status(201).json({ success: true, order });
 
@@ -422,6 +445,7 @@ exports.updateOrderStatus = async (req, res) => {
 
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
+    const oldStatus = order.status;
     order.status = status;
 
     if (status === 'shipped') {
@@ -439,7 +463,7 @@ exports.updateOrderStatus = async (req, res) => {
       eventType: 'ORDER_STATUS_UPDATED',
       orderId: order._id,
       userId: order.user._id,
-      oldStatus: order.status,
+      oldStatus,
       newStatus: status,
       trackingNumber: order.tracking.trackingNumber
     });

@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const DeliveryAgent = require('../models/DeliveryAgent');
+const Category = require('../models/Category');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { publishEvent, TOPICS } = require('../config/kafka');
@@ -41,7 +42,9 @@ exports.getOrders = async (req, res) => {
     }
 
     const orders = await Order.find(query)
-      .populate(['user', 'items.product', 'deliveryAgent'])
+      .populate({ path: 'user', select: 'name email phone' })
+      .populate({ path: 'items.product', select: 'name price images' })
+      .populate({ path: 'deliveryAgent', select: 'vehicleType vehicleNumber' })
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -81,7 +84,7 @@ exports.getUsers = async (req, res) => {
     if (isVerified !== undefined) query.isVerified = isVerified === 'true';
 
     const users = await User.find(query)
-      .select('-password -otp -resetToken')
+      .select('-password -otp -otpExpires -resetToken -resetTokenExpires -refreshToken')
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -206,9 +209,9 @@ exports.getAnalytics = async (req, res) => {
         { $group: { _id: null, total: { $sum: '$total' } } }
       ]),
       User.countDocuments({ createdAt: { $gte: startDate } }),
-      Product.countDocuments({ isActive: true }),
-      Order.find({ createdAt: { $gte: startDate } }).limit(10).populate('user'),
-      Product.find({ isActive: true }).sort({ soldCount: -1 }).limit(10)
+      Product.countDocuments({ isActive: { $ne: false } }),
+      Order.find({ createdAt: { $gte: startDate } }).limit(10).populate('user', 'name email'),
+      Product.find({ isActive: { $ne: false } }).sort({ soldCount: -1 }).limit(10)
     ]);
 
     res.json({
@@ -248,6 +251,60 @@ exports.getDeliveryAgents = async (req, res) => {
       .sort({ createdAt: -1 });
 
     res.json({ success: true, deliveryAgents });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.createDeliveryAgent = async (req, res) => {
+  let user;
+  try {
+    const { name, password, phone, vehicleNumber, licenseNumber } = req.body;
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const vehicleType = req.body.vehicleType || 'bike';
+
+    if (!name?.trim() || !email || !password || password.length < 8) {
+      return res.status(400).json({ success: false, message: 'Name, email, and a password of at least 8 characters are required' });
+    }
+    if (!['bike', 'car', 'truck'].includes(vehicleType)) {
+      return res.status(400).json({ success: false, message: 'Unsupported vehicle type' });
+    }
+    if (await User.exists({ email })) {
+      return res.status(409).json({ success: false, message: 'An account with this email already exists' });
+    }
+
+    user = await User.create({
+      name: name.trim(),
+      email,
+      password: await bcrypt.hash(password, 10),
+      phone,
+      isVerified: true,
+      isDeliveryPartner: true
+    });
+
+    const deliveryAgent = await DeliveryAgent.create({
+      user: user._id,
+      vehicleType,
+      vehicleNumber,
+      licenseNumber
+    });
+    await deliveryAgent.populate('user', 'name email phone');
+    res.status(201).json({ success: true, deliveryAgent });
+  } catch (err) {
+    if (user) await User.findByIdAndDelete(user._id).catch(() => {});
+    res.status(err.code === 11000 ? 409 : 500).json({
+      success: false,
+      message: err.code === 11000 ? 'An account with this email already exists' : err.message
+    });
+  }
+};
+
+exports.getCategories = async (req, res) => {
+  try {
+    const categories = await Category.find()
+      .populate('parent', 'name')
+      .sort({ sortOrder: 1, name: 1 });
+    res.json({ success: true, categories, total: categories.length });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

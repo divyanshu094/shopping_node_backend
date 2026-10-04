@@ -32,6 +32,8 @@ const producer = kafka.producer();
 const consumer = kafka.consumer({
   groupId: 'shopping-backend-group'
 });
+let kafkaReady = false;
+let kafkaWarningShown = false;
 
 /*
 |--------------------------------------------------------------------------
@@ -169,6 +171,7 @@ const initKafka = async () => {
     }
 
     console.log('Kafka consumer subscribed to topics');
+    kafkaReady = true;
 
   } catch (error) {
 
@@ -187,7 +190,15 @@ const initKafka = async () => {
 const publishEvent = async (topic, payload) => {
 
   if (process.env.KAFKA_ENABLED === 'false') {
-    return;
+    return false;
+  }
+
+  if (!kafkaReady) {
+    if (!kafkaWarningShown) {
+      console.warn('Kafka is unavailable; event publishing is being skipped');
+      kafkaWarningShown = true;
+    }
+    return false;
   }
 
   try {
@@ -201,12 +212,8 @@ const publishEvent = async (topic, payload) => {
           key: payload.key || null,
 
           value: JSON.stringify({
-
-            eventType: payload.eventType,
-
-            timestamp: new Date().toISOString(),
-
-            data: payload.data
+            ...payload,
+            timestamp: new Date().toISOString()
           })
         }
       ]
@@ -221,7 +228,7 @@ const publishEvent = async (topic, payload) => {
       error
     );
 
-    throw error;
+    return false;
   }
 };
 
@@ -367,6 +374,8 @@ const eventHandler = async (topic, event) => {
 */
 
 const disconnectKafka = async () => {
+
+  kafkaReady = false;
 
   try {
 

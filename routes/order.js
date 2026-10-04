@@ -336,7 +336,6 @@ router.get('/admin/orders', auth, admin, orderController.getAllOrders);
  *       404:
  *         description: Order not found
  */
-router.put('/admin/orders/:orderId/status', auth, admin, orderController.updateOrderStatus);
 
 /**
  * @swagger

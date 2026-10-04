@@ -3,6 +3,9 @@ const router = express.Router();
 const adminController = require('../controllers/adminController');
 const admin = require('../middleware/admin');
 const auth = require('../middleware/auth');
+const orderController = require('../controllers/orderController');
+
+router.put('/orders/:orderId/status', auth, admin, orderController.updateOrderStatus);
 
 /**
  * @swagger
@@ -392,6 +395,24 @@ router.get('/analytics', auth, admin, adminController.getAnalytics);
 
 /**
  * @swagger
+ * /api/admin/categories:
+ *   get:
+ *     summary: Get all categories, including hidden categories (Admin)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of all categories
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/categories', auth, admin, adminController.getCategories);
+
+/**
+ * @swagger
  * /api/admin/delivery-agents:
  *   get:
  *     summary: Get delivery agents (Admin)
@@ -407,5 +428,6 @@ router.get('/analytics', auth, admin, adminController.getAnalytics);
  *         description: Admin access required
  */
 router.get('/delivery-agents', auth, admin, adminController.getDeliveryAgents);
+router.post('/delivery-agents', auth, admin, adminController.createDeliveryAgent);
 
 module.exports = router;

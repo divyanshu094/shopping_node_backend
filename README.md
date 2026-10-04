@@ -22,6 +22,13 @@ A comprehensive e-commerce backend API built with Node.js, Express, and MongoDB,
 - **Analytics**: Business metrics and reporting data
 - **Notifications**: Real-time notification delivery
 
+### Payment Transaction Ledger
+- Payment attempts, gateway events, refunds, and COD settlement are stored in the `paymenttransactions` collection.
+- Duplicate gateway events update the existing attempt; provider transaction and refund references are indexed for idempotency.
+- `GET /api/payments/transactions` returns the authenticated user's paginated transaction history.
+- `GET /api/payments/admin/transactions` returns the admin view, with optional `userId`, `orderId`, `provider`, `status`, `type`, `page`, and `limit` filters.
+- Stored data includes amount in minor currency units, provider references, status, event IDs, and failure details. Raw webhook payloads and credentials are not stored.
+
 ## Real-time WebSocket API
 
 The application provides real-time order tracking via WebSocket connections using Socket.io.

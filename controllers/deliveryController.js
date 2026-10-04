@@ -4,6 +4,7 @@ const DeliveryAgent = require('../models/DeliveryAgent');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { publishEvent, TOPICS } = require('../config/kafka');
+const { recordPaymentTransaction } = require('../services/paymentLedger');
 
 exports.login = async (req, res) => {
   try {
@@ -80,6 +81,7 @@ exports.acceptOrder = async (req, res) => {
     await publishEvent(TOPICS.DELIVERY_TRACKING, {
       eventType: 'ORDER_ACCEPTED',
       orderId: order._id,
+      userId: order.user,
       deliveryAgentId: deliveryAgent._id,
       status: 'Out for delivery',
       location: deliveryAgent.currentLocation
@@ -111,9 +113,10 @@ exports.markPicked = async (req, res) => {
     await publishEvent(TOPICS.DELIVERY_TRACKING, {
       eventType: 'ORDER_PICKED_UP',
       orderId: order._id,
+      userId: order.user,
       deliveryAgentId: deliveryAgent._id,
       status: 'Picked up',
-      location: deliveryAgent.location
+      location: deliveryAgent.currentLocation
     });
 
     res.json({ success: true, message: 'Order marked as picked up', order });
@@ -137,8 +140,23 @@ exports.markDelivered = async (req, res) => {
 
     order.status = 'delivered';
     order.tracking.status = 'Delivered';
-    order.payment.status = 'completed';
+    if (order.payment.method === 'cod') {
+      order.payment.status = 'completed';
+    }
     await order.save();
+
+    if (order.payment.method === 'cod') {
+      await recordPaymentTransaction({
+        order: order._id,
+        user: order.user,
+        provider: 'cash',
+        status: 'completed',
+        amountMinor: Math.round(order.total * 100),
+        currency: 'INR',
+        method: 'cod',
+        gatewayOrderId: `cod:${order._id}`
+      });
+    }
 
     // Update delivery agent stats
     deliveryAgent.isAvailable = true;
@@ -150,9 +168,10 @@ exports.markDelivered = async (req, res) => {
     await publishEvent(TOPICS.DELIVERY_TRACKING, {
       eventType: 'ORDER_DELIVERED',
       orderId: order._id,
+      userId: order.user,
       deliveryAgentId: deliveryAgent._id,
       status: 'Delivered',
-      location: deliveryAgent.location,
+      location: deliveryAgent.currentLocation,
       deliveryTime: new Date()
     });
 
@@ -272,6 +291,17 @@ exports.updateLocation = async (req, res) => {
     );
 
     if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
+
+    const activeOrder = await Order.findOne({
+      deliveryAgent: deliveryAgent._id,
+      status: 'shipped'
+    }).select('_id');
+    if (activeOrder && global.socketService) {
+      global.socketService.emitDeliveryUpdate(activeOrder._id, {
+        location: deliveryAgent.currentLocation,
+        deliveryAgentId: deliveryAgent._id
+      });
+    }
 
     res.json({
       success: true,
