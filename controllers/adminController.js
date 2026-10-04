@@ -1,0 +1,391 @@
+const User = require('../models/User');
+const Order = require('../models/Order');
+const Product = require('../models/Product');
+const DeliveryAgent = require('../models/DeliveryAgent');
+const Category = require('../models/Category');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { publishEvent, TOPICS } = require('../config/kafka');
+
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email, isAdmin: true });
+    if (!user) return res.status(400).json({ success: false, message: 'Invalid credentials' });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ success: false, message: 'Invalid credentials' });
+
+    const token = jwt.sign(
+      { userId: user._id, isAdmin: true },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '7d' }
+    );
+
+    res.json({ success: true, token, user: { id: user._id, name: user.name, email: user.email, isAdmin: true } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getOrders = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status, user, startDate, endDate } = req.query;
+    const query = {};
+
+    if (status) query.status = status;
+    if (user) query.user = user;
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    const orders = await Order.find(query)
+      .populate({ path: 'user', select: 'name email phone' })
+      .populate({ path: 'items.product', select: 'name price images' })
+      .populate({ path: 'deliveryAgent', select: 'vehicleType vehicleNumber' })
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Order.countDocuments(query);
+
+    // Calculate totals
+    const totalRevenue = await Order.aggregate([
+      { $match: { status: 'delivered' } },
+      { $group: { _id: null, total: { $sum: '$total' } } }
+    ]);
+
+    res.json({
+      success: true,
+      orders,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total,
+      totalRevenue: totalRevenue[0]?.total || 0
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getUsers = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search, isVerified } = req.query;
+    const query = {};
+
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (isVerified !== undefined) query.isVerified = isVerified === 'true';
+
+    const users = await User.find(query)
+      .select('-password -otp -otpExpires -resetToken -resetTokenExpires -refreshToken')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await User.countDocuments(query);
+
+    res.json({
+      success: true,
+      users,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getProducts = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, category, search, isActive } = req.query;
+    const query = {};
+
+    if (category) query.category = category;
+    if (search) query.$text = { $search: search };
+    if (isActive !== undefined) query.isActive = isActive === 'true';
+
+    const products = await Product.find(query)
+      .populate('category')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Product.countDocuments(query);
+
+    res.json({
+      success: true,
+      products,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.createProduct = async (req, res) => {
+  try {
+    const product = new Product(req.body);
+    await product.save();
+    await product.populate('category');
+    res.status(201).json({ success: true, product });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.updateProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(req.params.productId, req.body, { new: true });
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    await product.populate('category');
+    res.json({ success: true, product });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(req.params.productId, { isActive: false });
+    if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
+    res.json({ success: true, message: 'Product deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.createCategory = async (req, res) => {
+  try {
+    const category = new (require('../models/Category'))(req.body);
+    await category.save();
+    res.status(201).json({ success: true, category });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.updateCategory = async (req, res) => {
+  try {
+    const category = await require('../models/Category').findByIdAndUpdate(req.params.categoryId, req.body, { new: true });
+    if (!category) return res.status(404).json({ success: false, message: 'Category not found' });
+    res.json({ success: true, category });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getAnalytics = async (req, res) => {
+  try {
+    const { period = '30d' } = req.query;
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
+    startDate.setDate(endDate.getDate() - days);
+
+    // Get analytics data
+    const [
+      totalOrders,
+      totalRevenue,
+      totalUsers,
+      totalProducts,
+      recentOrders,
+      topProducts
+    ] = await Promise.all([
+      Order.countDocuments({ createdAt: { $gte: startDate } }),
+      Order.aggregate([
+        { $match: { status: 'delivered', createdAt: { $gte: startDate } } },
+        { $group: { _id: null, total: { $sum: '$total' } } }
+      ]),
+      User.countDocuments({ createdAt: { $gte: startDate } }),
+      Product.countDocuments({ isActive: { $ne: false } }),
+      Order.find({ createdAt: { $gte: startDate } }).limit(10).populate('user', 'name email'),
+      Product.find({ isActive: { $ne: false } }).sort({ soldCount: -1 }).limit(10)
+    ]);
+
+    res.json({
+      success: true,
+      period,
+      totalOrders,
+      totalRevenue: totalRevenue[0]?.total || 0,
+      totalUsers,
+      totalProducts,
+      recentOrders,
+      topProducts
+    });
+
+    // Publish analytics data event
+    await publishEvent(TOPICS.ANALYTICS, {
+      eventType: 'ANALYTICS_DATA_REQUESTED',
+      period,
+      data: {
+        totalOrders,
+        totalRevenue: totalRevenue[0]?.total || 0,
+        totalUsers,
+        totalProducts,
+        startDate,
+        endDate
+      },
+      requestedBy: req.user.userId
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getDeliveryAgents = async (req, res) => {
+  try {
+    const deliveryAgents = await DeliveryAgent.find()
+      .populate('user', 'name email phone')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, deliveryAgents });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.createDeliveryAgent = async (req, res) => {
+  let user;
+  try {
+    const { name, password, phone, vehicleNumber, licenseNumber } = req.body;
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const vehicleType = req.body.vehicleType || 'bike';
+
+    if (!name?.trim() || !email || !password || password.length < 8) {
+      return res.status(400).json({ success: false, message: 'Name, email, and a password of at least 8 characters are required' });
+    }
+    if (!['bike', 'car', 'truck'].includes(vehicleType)) {
+      return res.status(400).json({ success: false, message: 'Unsupported vehicle type' });
+    }
+    if (await User.exists({ email })) {
+      return res.status(409).json({ success: false, message: 'An account with this email already exists' });
+    }
+
+    user = await User.create({
+      name: name.trim(),
+      email,
+      password: await bcrypt.hash(password, 10),
+      phone,
+      isVerified: true,
+      isDeliveryPartner: true
+    });
+
+    const deliveryAgent = await DeliveryAgent.create({
+      user: user._id,
+      vehicleType,
+      vehicleNumber,
+      licenseNumber
+    });
+    await deliveryAgent.populate('user', 'name email phone');
+    res.status(201).json({ success: true, deliveryAgent });
+  } catch (err) {
+    if (user) await User.findByIdAndDelete(user._id).catch(() => {});
+    res.status(err.code === 11000 ? 409 : 500).json({
+      success: false,
+      message: err.code === 11000 ? 'An account with this email already exists' : err.message
+    });
+  }
+};
+
+exports.updateDeliveryAgent = async (req, res) => {
+  try {
+    const deliveryAgent = await DeliveryAgent.findById(req.params.agentId).populate('user', 'name email phone');
+    if (!deliveryAgent || !deliveryAgent.user) {
+      return res.status(404).json({ success: false, message: 'Delivery agent not found' });
+    }
+
+    const { name, phone, vehicleType, vehicleNumber, licenseNumber, isActive } = req.body;
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : undefined;
+
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+      return res.status(400).json({ success: false, message: 'Name is required' });
+    }
+    if (email !== undefined && !email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+    if (email && await User.exists({ email, _id: { $ne: deliveryAgent.user._id } })) {
+      return res.status(409).json({ success: false, message: 'An account with this email already exists' });
+    }
+    if (vehicleType !== undefined && !['bike', 'car', 'truck'].includes(vehicleType)) {
+      return res.status(400).json({ success: false, message: 'Unsupported vehicle type' });
+    }
+    if (isActive !== undefined && typeof isActive !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'Account status must be active or inactive' });
+    }
+
+    if (isActive === false && await Order.exists({
+      deliveryAgent: deliveryAgent._id,
+      status: { $in: ['processing', 'shipped'] }
+    })) {
+      return res.status(409).json({
+        success: false,
+        message: 'This delivery partner has an active order. Complete the order before deactivating the account.'
+      });
+    }
+
+    if (name !== undefined) deliveryAgent.user.name = name.trim();
+    if (email !== undefined) deliveryAgent.user.email = email;
+    if (phone !== undefined) deliveryAgent.user.phone = phone;
+    if (vehicleType !== undefined) deliveryAgent.vehicleType = vehicleType;
+    if (vehicleNumber !== undefined) deliveryAgent.vehicleNumber = vehicleNumber;
+    if (licenseNumber !== undefined) deliveryAgent.licenseNumber = licenseNumber;
+    if (isActive !== undefined) deliveryAgent.isActive = isActive;
+
+    await deliveryAgent.user.save();
+    await deliveryAgent.save();
+    await deliveryAgent.populate('user', 'name email phone');
+    res.json({ success: true, deliveryAgent });
+  } catch (err) {
+    res.status(err.code === 11000 ? 409 : 500).json({
+      success: false,
+      message: err.code === 11000 ? 'An account with this email already exists' : err.message
+    });
+  }
+};
+
+exports.deleteDeliveryAgent = async (req, res) => {
+  try {
+    const deliveryAgent = await DeliveryAgent.findById(req.params.agentId);
+    if (!deliveryAgent) return res.status(404).json({ success: false, message: 'Delivery agent not found' });
+
+    if (await Order.exists({
+      deliveryAgent: deliveryAgent._id,
+      status: { $in: ['processing', 'shipped'] }
+    })) {
+      return res.status(409).json({
+        success: false,
+        message: 'This delivery partner has an active order. Complete the order before deleting the account.'
+      });
+    }
+
+    await Order.updateMany({ deliveryAgent: deliveryAgent._id }, { $unset: { deliveryAgent: '' } });
+    await DeliveryAgent.findByIdAndDelete(deliveryAgent._id);
+    await User.findOneAndDelete({ _id: deliveryAgent.user, isDeliveryPartner: true });
+    res.json({ success: true, message: 'Delivery partner deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getCategories = async (req, res) => {
+  try {
+    const categories = await Category.find()
+      .populate('parent', 'name')
+      .sort({ sortOrder: 1, name: 1 });
+    res.json({ success: true, categories, total: categories.length });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

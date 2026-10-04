@@ -1,0 +1,146 @@
+[
+  {
+    "id": 1,
+    "name": "beauty",
+    "title": "Beauty",
+    "image": "assets/categories/beauty.jpg"
+  },
+  {
+    "id": 2,
+    "name": "fragrances",
+    "title": "Fragrances",
+    "image": "assets/categories/fragrances.jpg"
+  },
+  {
+    "id": 3,
+    "name": "furniture",
+    "title": "Furniture",
+    "image": "assets/categories/furniture.jpg"
+  },
+  {
+    "id": 4,
+    "name": "groceries",
+    "title": "Groceries",
+    "image": "assets/categories/groceries.jpg"
+  },
+  {
+    "id": 5,
+    "name": "home-decoration",
+    "title": "Home Decoration",
+    "image": "assets/categories/home-decoration.jpg"
+  },
+  {
+    "id": 6,
+    "name": "kitchen-accessories",
+    "title": "Kitchen Accessories",
+    "image": "assets/categories/kitchen-accessories.jpg"
+  },
+  {
+    "id": 7,
+    "name": "laptops",
+    "title": "Laptops",
+    "image": "assets/categories/laptops.jpg"
+  },
+  {
+    "id": 8,
+    "name": "mens-shirts",
+    "title": "Men's Shirts",
+    "image": "assets/categories/mens-shirts.jpg"
+  },
+  {
+    "id": 9,
+    "name": "mens-shoes",
+    "title": "Men's Shoes",
+    "image": "assets/categories/mens-shoes.jpg"
+  },
+  {
+    "id": 10,
+    "name": "mens-watches",
+    "title": "Men's Watches",
+    "image": "assets/categories/mens-watches.jpg"
+  },
+  {
+    "id": 11,
+    "name": "mobile-accessories",
+    "title": "Mobile Accessories",
+    "image": "assets/categories/mobile-accessories.jpg"
+  },
+  {
+    "id": 12,
+    "name": "motorcycle",
+    "title": "Motorcycle",
+    "image": "assets/categories/motorcycle.jpg"
+  },
+  {
+    "id": 13,
+    "name": "skin-care",
+    "title": "Skin Care",
+    "image": "assets/categories/skin-care.jpg"
+  },
+  {
+    "id": 14,
+    "name": "smartphones",
+    "title": "Smartphones",
+    "image": "assets/categories/smartphones.jpg"
+  },
+  {
+    "id": 15,
+    "name": "sports-accessories",
+    "title": "Sports Accessories",
+    "image": "assets/categories/sports-accessories.jpg"
+  },
+  {
+    "id": 16,
+    "name": "sunglasses",
+    "title": "Sunglasses",
+    "image": "assets/categories/sunglasses.jpg"
+  },
+  {
+    "id": 17,
+    "name": "tablets",
+    "title": "Tablets",
+    "image": "assets/categories/tablets.jpg"
+  },
+  {
+    "id": 18,
+    "name": "tops",
+    "title": "Tops",
+    "image": "assets/categories/tops.jpg"
+  },
+  {
+    "id": 19,
+    "name": "vehicle",
+    "title": "Vehicle",
+    "image": "assets/categories/vehicle.jpg"
+  },
+  {
+    "id": 20,
+    "name": "womens-bags",
+    "title": "Women's Bags",
+    "image": "assets/categories/womens-bags.jpg"
+  },
+  {
+    "id": 21,
+    "name": "womens-dresses",
+    "title": "Women's Dresses",
+    "image": "assets/categories/womens-dresses.jpg"
+  },
+  {
+    "id": 22,
+    "name": "womens-jewellery",
+    "title": "Women's Jewellery",
+    "image": "assets/categories/womens-jewellery.jpg"
+  },
+  {
+    "id": 23,
+    "name": "womens-shoes",
+    "title": "Women's Shoes",
+    "image": "assets/categories/womens-shoes.jpg"
+  },
+  {
+    "id": 24,
+    "name": "womens-watches",
+    "title": "Women's Watches",
+    "image": "assets/categories/womens-watches.jpg"
+  }
+]

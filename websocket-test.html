@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Order Tracking Test</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        .log { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 10px; margin: 10px 0; max-height: 300px; overflow-y: auto; }
+        button { padding: 10px 15px; margin: 5px; cursor: pointer; }
+        input { padding: 8px; margin: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebSocket Order Tracking Test</h1>
+
+        <div id="connectionStatus" class="status disconnected">
+            Disconnected from server
+        </div>
+
+        <div class="info">
+            <h3>Test WebSocket Connection</h3>
+            <input type="text" id="tokenInput" placeholder="Enter JWT token" value="test-token">
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+        </div>
+
+        <div class="info">
+            <h3>Order Tracking</h3>
+            <input type="text" id="orderIdInput" placeholder="Enter Order ID" value="60f7b3b3b3b3b3b3b3b3b3b3">
+            <button onclick="subscribeOrder()">Subscribe to Order</button>
+            <button onclick="unsubscribeOrder()">Unsubscribe</button>
+        </div>
+
+        <div class="info">
+            <h3>Delivery Agent Location Update</h3>
+            <input type="number" id="latInput" placeholder="Latitude" value="12.9716" step="0.0001">
+            <input type="number" id="lngInput" placeholder="Longitude" value="77.5946" step="0.0001">
+            <button onclick="updateLocation()">Update Location</button>
+        </div>
+
+        <div class="log">
+            <h3>Event Log</h3>
+            <div id="logContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        const logContainer = document.getElementById('logContainer');
+        const connectionStatus = document.getElementById('connectionStatus');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+            logEntry.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function connect() {
+            const token = document.getElementById('tokenInput').value;
+
+            if (socket) {
+                socket.disconnect();
+            }
+
+            log('Connecting to WebSocket server...');
+
+            socket = io('http://localhost:3000', {
+                auth: {
+                    token: token
+                }
+            });
+
+            socket.on('connect', () => {
+                log('✅ Connected to WebSocket server', 'success');
+                connectionStatus.textContent = 'Connected to server';
+                connectionStatus.className = 'status connected';
+            });
+
+            socket.on('disconnect', () => {
+                log('❌ Disconnected from WebSocket server', 'error');
+                connectionStatus.textContent = 'Disconnected from server';
+                connectionStatus.className = 'status disconnected';
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`❌ Connection error: ${error.message}`, 'error');
+                connectionStatus.textContent = 'Connection failed';
+                connectionStatus.className = 'status disconnected';
+            });
+
+            socket.on('order-update', (data) => {
+                log(`📦 Order Update: ${JSON.stringify(data, null, 2)}`, 'success');
+            });
+
+            socket.on('delivery-tracking-update', (data) => {
+                log(`🚚 Delivery Update: ${JSON.stringify(data, null, 2)}`, 'success');
+            });
+
+            socket.on('delivery-location-update', (data) => {
+                log(`📍 Location Update: ${JSON.stringify(data, null, 2)}`, 'success');
+            });
+
+            socket.on('notification', (data) => {
+                log(`🔔 Notification: ${JSON.stringify(data, null, 2)}`, 'success');
+            });
+
+            socket.on('error', (error) => {
+                log(`❌ Error: ${error.message}`, 'error');
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                log('Disconnected from server');
+            }
+        }
+
+        function subscribeOrder() {
+            const orderId = document.getElementById('orderIdInput').value;
+            if (socket && orderId) {
+                socket.emit('subscribe-order-tracking', orderId);
+                log(`📋 Subscribed to order: ${orderId}`);
+            }
+        }
+
+        function unsubscribeOrder() {
+            const orderId = document.getElementById('orderIdInput').value;
+            if (socket && orderId) {
+                socket.emit('unsubscribe-order-tracking', orderId);
+                log(`📋 Unsubscribed from order: ${orderId}`);
+            }
+        }
+
+        function updateLocation() {
+            const latitude = parseFloat(document.getElementById('latInput').value);
+            const longitude = parseFloat(document.getElementById('lngInput').value);
+            const orderId = document.getElementById('orderIdInput').value;
+
+            if (socket && !isNaN(latitude) && !isNaN(longitude)) {
+                socket.emit('update-location', {
+                    latitude,
+                    longitude,
+                    orderId: orderId || undefined
+                });
+                log(`📍 Updated location: ${latitude}, ${longitude}`);
+            }
+        }
+
+        // Auto-connect on page load for testing
+        window.onload = () => {
+            log('WebSocket Order Tracking Test Page Loaded');
+            log('Note: Use a valid JWT token for authentication');
+        };
+    </script>
+</body>
+</html>
